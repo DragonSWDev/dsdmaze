@@ -1,5 +1,5 @@
-# glMaze-rs
-This is an Rust rewrite of [glMaze](https://github.com/DragonSWDev/glMaze) project written in C++ for the purpose of learning Rust. Like original project it uses OpenGL and SDL2 (gl and sdl2 crates). Project also depends on cgmath and image crates.
+# glmaze-rs
+This is [glMaze](https://github.com/DragonSWDev/glMaze) project rewritten in Rust for learning purposes. Similar to original project it uses OpenGL and SDL2 but other dependencies were replaced with native Rust equivalents.
 
 <span style="display:block;text-align:center">![Screenshot](./doc/screenshot.png)
 
@@ -44,4 +44,4 @@ Configuration file is located in following directories:
 By default camera is controlled by mouse and W/S keys are used for moving forward/backward. When mouse control is disabled then camera is rotated left and right by A and D keys.
 
 ## License
-glmaze-rs is distributed under the terms of MIT License. Project depends on OpenGL, SDL2 and following Rust crates: sdl2, gl, image, cgmath, rand. For information about licensing check their respecitve websites. Assets were created by me and are distributed under the terms of [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license.
+glmaze-rs is distributed under the terms of MIT License. Project depends on OpenGL, SDL2 and following Rust crates: sdl2, gl, image, cgmath, rand, rand_seeder, rand_pcg and rust-ini. For information about licensing check their respecitve websites. Assets were created by me and are distributed under the terms of [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license.
