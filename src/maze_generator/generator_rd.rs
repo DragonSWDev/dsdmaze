@@ -67,7 +67,7 @@ impl GeneratorRD<'_> {
                 let mut wall_index = wall_field * 2 + 1;
                 wall_index += 1; //Wall will be drawn in position next to the selected field
 
-                for n in (start_field_x * 2 + 1)..=(end_field_x * 2 + 2) { //Draw horizontal wall
+                for n in (start_field_x * 2 + 1)..(end_field_x * 2 + 2) { //Draw horizontal wall
                     maze_array[wall_index * self.maze_size + n] = true;
                 }
 
@@ -91,7 +91,7 @@ impl GeneratorRD<'_> {
                 let mut wall_index = wall_field * 2 + 1;
                 wall_index += 1;
 
-                for n in (start_field_y * 2 + 1)..=(end_field_y * 2 + 2) { 
+                for n in (start_field_y * 2 + 1)..(end_field_y * 2 + 2) { 
                     maze_array[n * self.maze_size + wall_index] = true;
                 }
 

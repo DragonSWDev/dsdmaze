@@ -82,8 +82,8 @@ impl MazeGenerator {
     pub fn generate_maze(&mut self) {
         match self.generator {
             SelectedGenerator::RD => {
-                //RD generator needs even size
-                if self.maze_size % 2 != 0 {
+                //RD generator needs odd size
+                if self.maze_size % 2 == 0 {
                     self.maze_size += 1;
                 }
 
@@ -185,5 +185,9 @@ impl MazeGenerator {
 
     pub fn get_maze_array(&self) -> &Vec<bool> {
         &self.maze_array
+    }
+
+    pub fn get_maze_size(&self) -> usize {
+        self.maze_size
     }
 }

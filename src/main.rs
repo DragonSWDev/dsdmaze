@@ -495,7 +495,7 @@ fn main() {
             camera_position.x += movement_speed * camera_front.x;
 
             if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    program_config.maze_size, maze_generator.get_maze_array()) {
+                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                 camera_position = last_position;
             }
 
@@ -504,7 +504,7 @@ fn main() {
             camera_position.z += movement_speed * camera_front.z;
 
             if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    program_config.maze_size, maze_generator.get_maze_array()) {
+                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                 camera_position = last_position;
             }
         }
@@ -515,7 +515,7 @@ fn main() {
             camera_position.x -= movement_speed * camera_front.x;
 
             if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    program_config.maze_size, maze_generator.get_maze_array()) {
+                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                 camera_position = last_position;
             }
 
@@ -524,7 +524,7 @@ fn main() {
             camera_position.z -= movement_speed * camera_front.z;
 
             if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    program_config.maze_size, maze_generator.get_maze_array()) {
+                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                 camera_position = last_position;
             }
         }
@@ -601,14 +601,14 @@ fn main() {
             //Calculate start and end row and column based on player position
             let start_row = cmp::max(1, camera_position.z as i32 - 15);
             let start_column = cmp::max(1, camera_position.x as i32 - 15);
-            let end_row = cmp::min(program_config.maze_size as i32 - 1, camera_position.z as i32 + 15);
-            let end_column = cmp::min(program_config.maze_size as i32 - 1, camera_position.x as i32 + 15);
+            let end_row = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.z as i32 + 15);
+            let end_column = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.x as i32 + 15);
 
             //Draw maze
             for i in start_row..end_row {
                 for j in start_column..end_column {
                     //Don't draw walls around non empty field (they won't be visible)
-                    if maze_generator.get_maze_array()[i as usize * program_config.maze_size + j as usize] {
+                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + j as usize] {
                         continue;
                     }
                     
@@ -616,7 +616,7 @@ fn main() {
                     gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
 
                     //Left wall
-                    if maze_generator.get_maze_array()[i as usize * program_config.maze_size + (j - 1) as usize] {
+                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j - 1) as usize] {
                         let model = {
                             let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) - 0.5, 0.0, (i*1) as f32));
                             let rotation = Matrix3::from_angle_y(Deg(-90.0));
@@ -629,7 +629,7 @@ fn main() {
                     }
 
                     //Right wall
-                    if maze_generator.get_maze_array()[i as usize * program_config.maze_size + (j + 1) as usize] {
+                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j + 1) as usize] {
                         let model = {
                             let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) + 0.5, 0.0, (i*1) as f32));
                             let rotation = Matrix3::from_angle_y(Deg(90.0));
@@ -642,7 +642,7 @@ fn main() {
                     }
 
                     //Front wall
-                    if maze_generator.get_maze_array()[(i - 1) as usize * program_config.maze_size + j as usize] {
+                    if maze_generator.get_maze_array()[(i - 1) as usize * maze_generator.get_maze_size() + j as usize] {
                         let model = {
                             let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) - 0.5));
                             let rotation = Matrix3::from_angle_y(Deg(180.0));
@@ -655,7 +655,7 @@ fn main() {
                     }
 
                     //Back wall
-                    if maze_generator.get_maze_array()[(i + 1) as usize * program_config.maze_size + j as usize] {
+                    if maze_generator.get_maze_array()[(i + 1) as usize * maze_generator.get_maze_size() + j as usize] {
                         let model = {
                             let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) + 0.5));
 
