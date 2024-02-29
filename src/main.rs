@@ -1,43 +1,39 @@
-/*TODO: Feature parity with C++ version - it can't be worse than C++ :D
-Final review
-*/
-
-extern crate sdl2;
+extern crate dirs;
 extern crate gl;
 extern crate image;
 extern crate cgmath;
 
-use crate::maze_generator::Direction;
-
-use std::ffi::{CStr, c_void};
-use std::mem;
-use std::ptr;
-use std::cmp;
+use std::ffi::{CStr, c_void, CString};
+use std::{fs, mem, ptr, cmp, env};
 use std::time::*;
-use std::env;
-use std::path::Path;
-use ini::Ini;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 
-use cgmath::Angle;
-use cgmath::EuclideanSpace;
-use cgmath::InnerSpace;
-use cgmath::{Matrix3, Matrix4, Point3, Vector3, Deg};
+use glutin::config::{GlConfig, ConfigTemplateBuilder};
+use glutin::context::{ContextApi, ContextAttributesBuilder, Version, GlProfile, NotCurrentGlContext};
+use glutin::display::{GetGlDisplay, GlDisplay};
+use glutin::surface::GlSurface;
+use glutin_winit::{DisplayBuilder, GlWindow};
+
+use ini::Ini;
+
+use cgmath::{Angle, EuclideanSpace, InnerSpace, Matrix3, Matrix4, Point3, Vector3, Deg};
 
 use gl::types::*;
 
 mod shader_manager;
 mod maze_generator;
 
-use sdl2::event::Event;
-use sdl2::keyboard::{Scancode, Keycode};
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::surface::Surface;
-use sdl2::video::FullscreenType;
+use raw_window_handle::HasRawWindowHandle;
+
+use winit::dpi::LogicalSize;
+use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+use winit::window::{Fullscreen, Icon, WindowBuilder};
+
 use shader_manager::ShaderManager;
-use maze_generator::MazeGenerator;
-use maze_generator::SelectedGenerator;
+use maze_generator::{MazeGenerator, SelectedGenerator, Direction};
 
                                     //Vertex position   //Texture UV    //Normal vector
 static VERTEX_DATA: [GLfloat; 32] = [ 0.5,  0.5, 0.0,    1.0, 1.0,       0.0, 0.0, 1.0,
@@ -86,8 +82,8 @@ fn check_collision(player_x: f32, player_z: f32, maze_size: usize, maze_array: &
     start_column = cmp::max(start_column, 0);
 
     //Get end values and trim it to maze size if they are bigger
-    let end_row = cmp::max(start_row + 4, maze_size as i32);
-    let end_column = cmp::max(start_column + 4, maze_size as i32);
+    let end_row = cmp::min(start_row + 4, maze_size as i32);
+    let end_column = cmp::min(start_column + 4, maze_size as i32);
 
     let mut collision_occured = false;
     
@@ -213,8 +209,20 @@ fn main() {
     }
 
     if !program_config.set_portable {
-        let config_dir = sdl2::filesystem::pref_path("DragonSWDev", "glmaze-rs").expect("Failed to get config dir.");
-        let config_path = Path::new(&config_dir).join("glmaze-rs.ini");
+        let mut config_path = dirs::config_dir().expect("Failed to get config dir.");
+        config_path = config_path.join("DragonSWDev");
+
+        if !config_path.exists() {
+            fs::create_dir(config_path.clone()).expect("Failed to create config dir.");
+        }
+
+        config_path = config_path.join("glmaze-rs");
+
+        if !config_path.exists() {
+            fs::create_dir(config_path.clone()).expect("Failed to create config dir.");
+        }
+
+        config_path = config_path.join("glmaze-rs.ini");
 
         //Config file doesn't exist so create it with default values
         if !config_path.exists() {
@@ -273,32 +281,54 @@ fn main() {
         program_config.maze_size = 20;
     }
 
-    let sdl_context = sdl2::init().unwrap();
-    let sdl_video_subsystem = sdl_context.video().unwrap();
+    let event_loop = EventLoop::new().unwrap();
 
-    sdl_video_subsystem.gl_attr().set_context_profile(sdl2::video::GLProfile::Core);
-    sdl_video_subsystem.gl_attr().set_context_version(3, 3);
+    let window_builder;
 
-    let mut sdl_window = sdl_video_subsystem
-            .window("glmaze-rs", program_config.window_width, program_config.window_height)
-            .position_centered()
-            .opengl()
-            .build()
-            .map_err(|e| e.to_string()).unwrap();
-
-    //If fullscreen is enabled, get current resolution
     if program_config.set_fullscreen {
-        match sdl_video_subsystem.current_display_mode(0) {
-            Ok(x) => {
-                program_config.window_width = x.w as u32;
-                program_config.window_height = x.h as u32;
-            }
-            Err(_) => { panic!("Error getting current display mode.") }
-        }
-
-        sdl_context.mouse().show_cursor(false);
-        sdl_window.set_fullscreen(FullscreenType::Desktop).unwrap();
+        window_builder = Some(WindowBuilder::new().with_title("glmaze-rs")
+                                                .with_fullscreen(Some(Fullscreen::Borderless(None))));   
     }
+    else {
+        window_builder = Some(WindowBuilder::new().with_title("glmaze-rs")
+                                                .with_resizable(false)
+                                                .with_inner_size(LogicalSize::new(program_config.window_width, program_config.window_height)));   
+    }                                  
+
+    let display_builder = DisplayBuilder::new().with_window_builder(window_builder);
+
+    let (window, gl_config) = display_builder.build(&event_loop, ConfigTemplateBuilder::new(), |configs| {
+        configs
+            .reduce(|accum, config| {
+                if config.num_samples() > accum.num_samples() {
+                    config
+                } else {
+                    accum
+                }
+            })
+            .unwrap()
+    }).unwrap();
+
+    let gl_display = gl_config.display();
+    let raw_window_handle = window.as_ref().map(|window| window.raw_window_handle());
+    let window = window.unwrap();
+    let attrs = window.build_surface_attributes(Default::default());
+
+    let gl_surface = unsafe {
+        gl_display.create_window_surface(&gl_config, &attrs).unwrap()
+    };
+
+    let context_attributes = ContextAttributesBuilder::new()
+        .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 2))))
+        .with_profile(GlProfile::Core)
+        .build(raw_window_handle);
+
+    let gl_context = unsafe {
+        gl_display.create_context(&gl_config, &context_attributes).expect("Failed to create OpenGL context.").make_current(&gl_surface).unwrap()
+    };
+
+    program_config.window_width = window.inner_size().width;
+    program_config.window_height = window.inner_size().height;
 
     //Print selected options
     println!("Selected options:");
@@ -329,8 +359,10 @@ fn main() {
     let mut maze_generator = MazeGenerator::new(program_config.selected_generator, program_config.maze_size, program_config.seed);
     maze_generator.generate_maze();
 
-    let _gl_context = sdl_window.gl_create_context().unwrap();
-    let _gl = gl::load_with(|s| sdl_video_subsystem.gl_get_proc_address(s) as *const std::os::raw::c_void);
+    gl::load_with(|symbol| {
+        let symbol = CString::new(symbol).unwrap();
+        gl_display.get_proc_address(symbol.as_c_str()).cast()
+    });
 
     //Print details about OpenGL context
     println!("OpenGL initialized.");
@@ -356,20 +388,22 @@ fn main() {
         gl::Enable(gl::CULL_FACE);
     }
 
-    //TODO paths are not correct
-    let install_dir = sdl2::filesystem::base_path().expect("Cannot get install dir.");
-    let install_path = Path::new(&install_dir);
+    let mut install_path = env::current_exe().expect("Failed to get current path.");
+    install_path.pop();
     let assets_path = install_path.join("assets");
 
     //Setup window icon
-    //Lack of window icon is not critical error so it it couldn't be loaded continue without it
+    //Lack of window icon is not critical error so it should continue even after icon can't be loaded
     if let Ok(icon_file) = image::open(assets_path.join("icon.png")) {
-        let width = icon_file.width();
-        let height = icon_file.height();
-        let mut binding = icon_file.into_rgba8().into_raw();
-        let icon_surface = Surface::from_data(binding.as_mut(), width, height, width * 4, PixelFormatEnum::ABGR8888).unwrap();
+        let (icon_rgba, icon_width, icon_height) = {
+            let icon_rgba8 = icon_file.into_rgba8();
+            let (width, height) = icon_rgba8.dimensions();
+            let rgba = icon_rgba8.into_raw();
+            (rgba, width, height)
+        };
 
-        sdl_window.set_icon(icon_surface);
+        let icon = Icon::from_rgba(icon_rgba, icon_width, icon_height).unwrap();
+        window.set_window_icon(Some(icon));
     }
 
     let shaders_path = install_path.join("shaders");
@@ -441,304 +475,333 @@ fn main() {
     let mut camera_yaw = -90.0;
     let mut camera_pitch = 0.0;
 
-    //Vsync
-    sdl_video_subsystem.gl_set_swap_interval(1).unwrap();
-
-    let mut event_pump = sdl_context.event_pump().unwrap();
 
     if program_config.mouse_enabled {
-        sdl_context.mouse().set_relative_mouse_mode(true);
-        sdl_context.mouse().capture(true);
+        window.set_cursor_visible(false);
+        window.set_cursor_grab(winit::window::CursorGrabMode::Locked).unwrap();
     }
 
     //Setup game values
     let time_start = Instant::now();
-
     let mut last_frame = time_start.elapsed().as_secs_f32();
-    let mut delta_time = last_frame;
 
-    let mut camera_speed = 90.0 * delta_time;
-    let mut movement_speed = 2.5 * delta_time;
+    let mut camera_speed = 90.0;
+
+    let mut key_table = vec![false; 255].into_boxed_slice();
 
     //Main loop
-    'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+    event_loop.run(move |event, window_target| {
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
+                    event: KeyEvent { logical_key: Key::Named(NamedKey::Escape), .. },
                     ..
-                } => break 'running,
-                Event::MouseMotion { xrel, yrel, .. } => {
-                    if program_config.mouse_enabled {
-                        let offset_x = xrel as f32 * camera_speed;
-                        let offset_y = yrel as f32 * camera_speed;
-
-                        camera_yaw += offset_x;
-                        camera_pitch -= offset_y;
-
-                        if camera_pitch > 89.0 {
-                           camera_pitch = 89.0;
-                        } else if camera_pitch < -89.0 {
-                           camera_pitch = -89.0
-                        }
+                } => window_target.exit(),
+                WindowEvent::KeyboardInput { event, .. } => {
+                    if let PhysicalKey::Code(code) = event.physical_key {
+                        key_table[code as usize] = event.state.is_pressed();
                     }
                 }
-                _ => {}
+                _ => (),
+            },
+            Event::DeviceEvent { event, .. } => {
+                match event {
+                    DeviceEvent::MouseMotion { delta } => {
+                        if program_config.mouse_enabled {
+                            let offset_x = delta.0 as f32 * camera_speed;
+                            let offset_y = delta.1 as f32 * camera_speed;
+
+                            camera_yaw += offset_x;
+                            camera_pitch -= offset_y;
+
+                            if camera_pitch > 89.0 {
+                                camera_pitch = 89.0;
+                            } else if camera_pitch < -89.0 {
+                                camera_pitch = -89.0
+                            }
+                        }
+                    },
+                    _ => ()
+                }
             }
-        }
+            Event::AboutToWait => {
+                let view = Matrix4::look_at_rh(Point3::from_vec(camera_position), Point3::from_vec(camera_position + camera_front), camera_up);
 
-        //Event handling
-        if event_pump.keyboard_state().is_scancode_pressed(Scancode::W) {
-            let last_position = camera_position;
-
-            camera_position.x += movement_speed * camera_front.x;
-
-            if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                camera_position = last_position;
-            }
-
-            let last_position = camera_position;
-
-            camera_position.z += movement_speed * camera_front.z;
-
-            if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                camera_position = last_position;
-            }
-        }
-
-        if event_pump.keyboard_state().is_scancode_pressed(Scancode::S) {
-            let last_position = camera_position;
-
-            camera_position.x -= movement_speed * camera_front.x;
-
-            if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                camera_position = last_position;
-            }
-
-            let last_position = camera_position;
-
-            camera_position.z -= movement_speed * camera_front.z;
-
-            if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                                    maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                camera_position = last_position;
-            }
-        }
-
-        if event_pump.keyboard_state().is_scancode_pressed(Scancode::A) {
-            if !program_config.mouse_enabled {
-                camera_yaw -= camera_speed;
-            }
-        }
-
-        if event_pump.keyboard_state().is_scancode_pressed(Scancode::D) {
-            if !program_config.mouse_enabled {
-                camera_yaw += camera_speed;
-            }
-        }
-
-        let current_frame = time_start.elapsed().as_secs_f32();
-        delta_time = current_frame - last_frame;
-        last_frame = current_frame;
+                let current_frame = time_start.elapsed().as_secs_f32();
+                let delta_time = current_frame - last_frame;
+                last_frame = current_frame;
         
-        if program_config.mouse_enabled {
-            camera_speed = 10.0 * delta_time;
-        }
-        else {
-            camera_speed = 2.5 * delta_time;
-        }
+                if program_config.mouse_enabled {
+                    camera_speed = 10.0 * delta_time;
+                }
+                else {
+                    camera_speed = 2.5 * delta_time;
+                }
 
-        movement_speed = 2.5 * delta_time;
+                //Process input
+                if key_table[KeyCode::KeyW as usize] {
+                    let last_position = camera_position;
+                    let movement_speed = 2.5 * delta_time;
 
-        //End game if player is near to exit
-        if check_collision_point_rectangle(camera_position.x, camera_position.z, 
-                                            maze_generator.get_exit().0 as f32, maze_generator.get_exit().1 as f32) {
-            break 'running;
-        }        
+                    camera_position.x += movement_speed * camera_front.x;
 
-        //Setup camera front
-        if program_config.mouse_enabled {
-            let camera_direction: Vector3<f32> = Vector3::new(cgmath::Deg(camera_yaw).cos() * cgmath::Deg(camera_pitch).cos(), 
-                                                            cgmath::Deg(camera_pitch).sin(), 
-                                                            cgmath::Deg(camera_yaw).sin() * cgmath::Deg(camera_pitch).cos());
-
-            camera_front = camera_direction.normalize();
-        }
-        else{ 
-            camera_front = Vector3::new(cgmath::Rad(camera_yaw).cos(), 
-                                    cgmath::Rad(0.0).sin(), 
-                                    cgmath::Rad(camera_yaw).sin());
-         } 
-
-
-        //Begin drawing
-        let view = Matrix4::look_at_rh(Point3::from_vec(camera_position), Point3::from_vec(camera_position + camera_front), camera_up);
-
-        unsafe {
-            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-            //Bind wall texture
-            gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
-            
-            //Setup uniforms in shaders
-            main_shader.use_shader();
-
-            main_shader.set_uniform_matrix4fv("view", view);
-            main_shader.set_uniform_matrix4fv("projection", projection);
-
-            main_shader.set_uniform_vec3fv("lightColor", cgmath::Vector3::new(1.0, 1.0, 1.0));
-            main_shader.set_uniform_vec3fv("lightVector", camera_position);
-
-            gl::BindVertexArray(vertex_array_object);
-
-            //Draw maze
-            //Only small area around the player needs to be drawn
-            //Calculate start and end row and column based on player position
-            let start_row = cmp::max(1, camera_position.z as i32 - 15);
-            let start_column = cmp::max(1, camera_position.x as i32 - 15);
-            let end_row = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.z as i32 + 15);
-            let end_column = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.x as i32 + 15);
-
-            //Draw maze
-            for i in start_row..end_row {
-                for j in start_column..end_column {
-                    //Don't draw walls around non empty field (they won't be visible)
-                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + j as usize] {
-                        continue;
-                    }
-                    
-                    //Wall texture
-                    gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
-
-                    //Left wall
-                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j - 1) as usize] {
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) - 0.5, 0.0, (i*1) as f32));
-                            let rotation = Matrix3::from_angle_y(Deg(-90.0));
-
-                            position * Matrix4::from(rotation)
-                        };
-                        
-                        main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                        camera_position = last_position;
                     }
 
-                    //Right wall
-                    if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j + 1) as usize] {
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) + 0.5, 0.0, (i*1) as f32));
-                            let rotation = Matrix3::from_angle_y(Deg(90.0));
+                    let last_position = camera_position;
 
-                            position * Matrix4::from(rotation)
-                        };
-                        
-                        main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                    }
+                    camera_position.z += movement_speed * camera_front.z;
 
-                    //Front wall
-                    if maze_generator.get_maze_array()[(i - 1) as usize * maze_generator.get_maze_size() + j as usize] {
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) - 0.5));
-                            let rotation = Matrix3::from_angle_y(Deg(180.0));
-
-                            position * Matrix4::from(rotation)
-                        };
-                        
-                        main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                    }
-
-                    //Back wall
-                    if maze_generator.get_maze_array()[(i + 1) as usize * maze_generator.get_maze_size() + j as usize] {
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) + 0.5));
-
-                            position
-                        };
-                        
-                        main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                    }
-
-                    //Draw floor
-                    gl::BindTexture(gl::TEXTURE_2D, maze_textures[1]);
-
-                    let model = {
-                        let position = Matrix4::from_translation(Vector3::new((j*1) as f32, -0.5, (i*1) as f32));
-                        let rotation = Matrix3::from_angle_x(Deg(90.0));
-
-                        position * Matrix4::from(rotation)
-                    };
-                    
-                    main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-
-                    //Draw ceiling
-                    gl::BindTexture(gl::TEXTURE_2D, maze_textures[2]);
-
-                    let model = {
-                        let position = Matrix4::from_translation(Vector3::new((j*1) as f32, 0.5, (i*1) as f32));
-                        let rotation = Matrix3::from_angle_x(Deg(-90.0));
-
-                        position * Matrix4::from(rotation)
-                    };
-                    
-                    main_shader.set_uniform_matrix4fv("model", model);
-                    gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-
-                    //Draw exit if it's visible
-                    let model;
-                    if j == maze_generator.get_exit().0 as i32 && i == maze_generator.get_exit().1 as i32 {
-                        gl::BindTexture(gl::TEXTURE_2D, maze_textures[3]);
-
-                        match maze_generator.get_end_border() {
-                            Direction::Top => {
-                                model = {
-                                    let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) - 0.5));
-                                    let rotation = Matrix3::from_angle_y(Deg(180.0));
-            
-                                    position * Matrix4::from(rotation)
-                                };
-                            },
-                            Direction::Bottom => {
-                                model = {
-                                    let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) + 0.5));
-            
-                                    position
-                                };
-                            },
-                            Direction::Left => {
-                                model = {
-                                    let position = Matrix4::from_translation(Vector3::new((j as f32) - 0.5, 0.0, i as f32));
-                                    let rotation = Matrix3::from_angle_y(Deg(-90.0));
-            
-                                    position * Matrix4::from(rotation)
-                                };
-                            },
-                            Direction::Right => {
-                                model = {
-                                    let position = Matrix4::from_translation(Vector3::new((j as f32) + 0.5, 0.0, i as f32));
-                                    let rotation = Matrix3::from_angle_y(Deg(90.0));
-            
-                                    position * Matrix4::from(rotation)
-                                };
-                            },
-                        }
-
-                        main_shader.set_uniform_matrix4fv("model", model);
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                        camera_position = last_position;
                     }
                 }
-            }
-        }
 
-        sdl_window.gl_swap_window();
-    }
+                if key_table[KeyCode::KeyS as usize] {
+                    let last_position = camera_position;
+                    let movement_speed = 2.5 * delta_time;
+
+                    camera_position.x -= movement_speed * camera_front.x;
+
+                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                        camera_position = last_position;
+                    }
+
+                    let last_position = camera_position;
+
+                    camera_position.z -= movement_speed * camera_front.z;
+
+                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                        camera_position = last_position;
+                    }
+                }
+
+                if key_table[KeyCode::KeyA as usize] {
+                    if !program_config.mouse_enabled {
+                        camera_yaw -= camera_speed;
+                    }
+                }
+
+                if key_table[KeyCode::KeyD as usize] {
+                    if !program_config.mouse_enabled {
+                        camera_yaw += camera_speed;
+                    }
+                }
+
+                //Setup camera front
+                if program_config.mouse_enabled {
+                    let camera_direction: Vector3<f32> = Vector3::new(cgmath::Deg(camera_yaw).cos() * cgmath::Deg(camera_pitch).cos(), 
+                                                                    cgmath::Deg(camera_pitch).sin(), 
+                                                                    cgmath::Deg(camera_yaw).sin() * cgmath::Deg(camera_pitch).cos());
+
+                    camera_front = camera_direction.normalize();
+                }
+                else { 
+                    camera_front = Vector3::new(cgmath::Rad(camera_yaw).cos(), 
+                                                cgmath::Rad(0.0).sin(), 
+                                                cgmath::Rad(camera_yaw).sin());
+                }
+
+                //End game if player is near to exit
+                if check_collision_point_rectangle(camera_position.x, camera_position.z, 
+                            maze_generator.get_exit().0 as f32, maze_generator.get_exit().1 as f32) {
+                    window_target.exit();
+                } 
+
+                //Setup uniforms in shaders
+                main_shader.use_shader();
+
+                main_shader.set_uniform_matrix4fv("view", view);
+                main_shader.set_uniform_matrix4fv("projection", projection);
+
+                main_shader.set_uniform_vec3fv("lightColor", cgmath::Vector3::new(1.0, 1.0, 1.0));
+                main_shader.set_uniform_vec3fv("lightVector", camera_position);
+
+                //Begin rendering
+                unsafe {
+                    gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+                    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+                    gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
+                    
+                    gl::BindVertexArray(vertex_array_object);
+                }
+
+                //Maze rendering
+                //Only small area around the player needs to be drawn
+                //Calculate start and end row and column based on player position
+                let start_row = cmp::max(1, camera_position.z as i32 - 15);
+                let start_column = cmp::max(1, camera_position.x as i32 - 15);
+                let end_row = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.z as i32 + 15);
+                let end_column = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.x as i32 + 15);
+
+                for i in start_row..end_row {
+                    for j in start_column..end_column {
+                        //Don't draw walls around non empty field (they won't be visible)
+                        if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + j as usize] {
+                            continue;
+                        }
+
+                        //Bind wall texture
+                        unsafe {
+                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
+                        }
+
+                        //Draw walls
+                        //Left wall
+                        if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j - 1) as usize] {
+                            let model = {
+                                let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) - 0.5, 0.0, (i*1) as f32));
+                                let rotation = Matrix3::from_angle_y(Deg(-90.0));
+                                position * Matrix4::from(rotation)
+                            };
+                
+                            main_shader.set_uniform_matrix4fv("model", model);
+
+                            unsafe {
+                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                            }
+                        }
+
+                        //Right wall
+                        if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j + 1) as usize] {
+                            let model = {
+                                let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) + 0.5, 0.0, (i*1) as f32));
+                                let rotation = Matrix3::from_angle_y(Deg(90.0));
+                                position * Matrix4::from(rotation)
+                            };
+                
+                            main_shader.set_uniform_matrix4fv("model", model);
+
+                            unsafe {
+                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                            }
+                        }
+
+                        //Front wall
+                        if maze_generator.get_maze_array()[(i - 1) as usize * maze_generator.get_maze_size() + j as usize] {
+                            let model = {
+                                let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) - 0.5));
+                                let rotation = Matrix3::from_angle_y(Deg(180.0));
+                                position * Matrix4::from(rotation)
+                            };
+                
+                            main_shader.set_uniform_matrix4fv("model", model);
+
+                            unsafe {
+                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                            }
+                        }
+
+                        //Back wall
+                        if maze_generator.get_maze_array()[(i + 1) as usize * maze_generator.get_maze_size() + j as usize] {
+                            let model = {
+                                let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) + 0.5));
+                                position
+                            };
+                
+                            main_shader.set_uniform_matrix4fv("model", model);
+
+                            unsafe {
+                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                            }
+                        }
+
+                        //Floor
+                        unsafe {
+                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[1]);
+                        }
+
+                        let model = {
+                            let position = Matrix4::from_translation(Vector3::new((j*1) as f32, -0.5, (i*1) as f32));
+                            let rotation = Matrix3::from_angle_x(Deg(90.0));
+                            position * Matrix4::from(rotation)
+                        };
+            
+                        main_shader.set_uniform_matrix4fv("model", model);
+
+                        unsafe {
+                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                        }
+
+                        //Ceiling
+                        unsafe {
+                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[2]);
+                        }
+
+                        let model = {
+                            let position = Matrix4::from_translation(Vector3::new((j*1) as f32, 0.5, (i*1) as f32));
+                            let rotation = Matrix3::from_angle_x(Deg(-90.0));
+                            position * Matrix4::from(rotation)
+                        };
+                            
+                        main_shader.set_uniform_matrix4fv("model", model);
+
+                        unsafe {
+                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                        }
+
+                        //Draw exit if it's visible
+                        let model;
+                        if j == maze_generator.get_exit().0 as i32 && i == maze_generator.get_exit().1 as i32 {
+                            unsafe {
+                                gl::BindTexture(gl::TEXTURE_2D, maze_textures[3]);
+                            }
+                    
+                            match maze_generator.get_end_border() {
+                                Direction::Top => {
+                                    model = {
+                                        let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) - 0.5));
+                                        let rotation = Matrix3::from_angle_y(Deg(180.0));
+    
+                                        position * Matrix4::from(rotation)
+                                    };
+                                },
+                                Direction::Bottom => {
+                                    model = {
+                                        let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) + 0.5));
+    
+                                        position
+                                    };
+                                },
+                                Direction::Left => {
+                                    model = {
+                                        let position = Matrix4::from_translation(Vector3::new((j as f32) - 0.5, 0.0, i as f32));
+                                        let rotation = Matrix3::from_angle_y(Deg(-90.0));
+    
+                                        position * Matrix4::from(rotation)
+                                    };
+                                },
+                                Direction::Right => {
+                                    model = {
+                                        let position = Matrix4::from_translation(Vector3::new((j as f32) + 0.5, 0.0, i as f32));
+                                        let rotation = Matrix3::from_angle_y(Deg(90.0));
+    
+                                        position * Matrix4::from(rotation)
+                                    };
+                                },
+                            }
+
+                            main_shader.set_uniform_matrix4fv("model", model);
+
+                            unsafe {
+                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+                            }
+                        }
+                    }
+                }
+
+                //Finish rendering
+                gl_surface.swap_buffers(&gl_context).unwrap();
+                window.request_redraw();
+            },
+            _ => (),
+        }
+    }).unwrap();
 
 }
