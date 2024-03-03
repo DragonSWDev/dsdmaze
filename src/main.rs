@@ -484,6 +484,8 @@ fn main() {
     //Setup game values
     let time_start = Instant::now();
     let mut last_frame = time_start.elapsed().as_secs_f32();
+    let time_step: f32 = 0.01;
+    let mut accumulator: f32 = 0.0;
 
     let mut camera_speed = 90.0;
 
@@ -528,70 +530,80 @@ fn main() {
                 let view = Matrix4::look_at_rh(Point3::from_vec(camera_position), Point3::from_vec(camera_position + camera_front), camera_up);
 
                 let current_frame = time_start.elapsed().as_secs_f32();
-                let delta_time = current_frame - last_frame;
+                let frame_time = f32::max(0.0, current_frame - last_frame);
                 last_frame = current_frame;
+
+                accumulator += frame_time;
+                accumulator = f32::clamp(accumulator, 0.0, 1.0);
+
+                //Physics loop
+                while accumulator >= time_step {
+                    if program_config.mouse_enabled {
+                        camera_speed = 10.0 * time_step;
+                    }
+                    else {
+                        camera_speed = 2.5 * time_step;
+                    }
+
+                    let movement_speed = 2.5 * time_step;
+
+                    //Process input
+                    if key_table[KeyCode::KeyW as usize] {
+                        let last_position = camera_position;
+                        
+    
+                        camera_position.x += movement_speed * camera_front.x;
+    
+                        if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                                maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                            camera_position = last_position;
+                        }
+    
+                        let last_position = camera_position;
+    
+                        camera_position.z += movement_speed * camera_front.z;
+    
+                        if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                                maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                            camera_position = last_position;
+                        }
+                    }
+    
+                    if key_table[KeyCode::KeyS as usize] {
+                        let last_position = camera_position;
+    
+                        camera_position.x -= movement_speed * camera_front.x;
+    
+                        if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                                maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                            camera_position = last_position;
+                        }
+    
+                        let last_position = camera_position;
+    
+                        camera_position.z -= movement_speed * camera_front.z;
+    
+                        if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
+                                                                maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
+                            camera_position = last_position;
+                        }
+                    }
+    
+                    if key_table[KeyCode::KeyA as usize] {
+                        if !program_config.mouse_enabled {
+                            camera_yaw -= camera_speed;
+                        }
+                    }
+    
+                    if key_table[KeyCode::KeyD as usize] {
+                        if !program_config.mouse_enabled {
+                            camera_yaw += camera_speed;
+                        }
+                    }
+
+                    accumulator -= time_step;
+                }
         
-                if program_config.mouse_enabled {
-                    camera_speed = 10.0 * delta_time;
-                }
-                else {
-                    camera_speed = 2.5 * delta_time;
-                }
-
-                //Process input
-                if key_table[KeyCode::KeyW as usize] {
-                    let last_position = camera_position;
-                    let movement_speed = 2.5 * delta_time;
-
-                    camera_position.x += movement_speed * camera_front.x;
-
-                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                        camera_position = last_position;
-                    }
-
-                    let last_position = camera_position;
-
-                    camera_position.z += movement_speed * camera_front.z;
-
-                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                        camera_position = last_position;
-                    }
-                }
-
-                if key_table[KeyCode::KeyS as usize] {
-                    let last_position = camera_position;
-                    let movement_speed = 2.5 * delta_time;
-
-                    camera_position.x -= movement_speed * camera_front.x;
-
-                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                        camera_position = last_position;
-                    }
-
-                    let last_position = camera_position;
-
-                    camera_position.z -= movement_speed * camera_front.z;
-
-                    if program_config.enable_collisions && check_collision(camera_position.x, camera_position.z, 
-                                                            maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
-                        camera_position = last_position;
-                    }
-                }
-
-                if key_table[KeyCode::KeyA as usize] {
-                    if !program_config.mouse_enabled {
-                        camera_yaw -= camera_speed;
-                    }
-                }
-
-                if key_table[KeyCode::KeyD as usize] {
-                    if !program_config.mouse_enabled {
-                        camera_yaw += camera_speed;
-                    }
-                }
 
                 //Setup camera front
                 if program_config.mouse_enabled {
