@@ -17,7 +17,7 @@ use glutin_winit::{DisplayBuilder, GlWindow};
 
 use ini::Ini;
 
-use cgmath::{Angle, EuclideanSpace, InnerSpace, Matrix3, Matrix4, Point3, Vector3, Deg};
+use cgmath::{Angle, Deg, EuclideanSpace, InnerSpace, Matrix3, Matrix4, Point3, Vector3};
 
 use gl::types::*;
 
@@ -31,6 +31,12 @@ use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Fullscreen, Icon, WindowBuilder};
+
+use kira::{
+	manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
+	sound::static_sound::{StaticSoundData, StaticSoundSettings, StaticSoundHandle},
+	tween::Tween,
+};
 
 use shader_manager::ShaderManager;
 use maze_generator::{MazeGenerator, SelectedGenerator, Direction};
@@ -52,6 +58,7 @@ struct ProgramConfig {
     set_fullscreen: bool,
     set_portable: bool,
     mouse_enabled: bool,
+    audio_enabled: bool,
     seed: String,
     selected_generator: SelectedGenerator
 }
@@ -186,6 +193,11 @@ fn parse_commandline_arguments(arguments: Vec<String>, config: &mut ProgramConfi
         if argument.contains("-disable-mouse") {
             config.mouse_enabled = false;
         }
+
+        //Disable mouse control (enabled by default)
+        if argument.contains("-disable-audio") {
+            config.audio_enabled = false;
+        }
     }
 }
 
@@ -200,6 +212,7 @@ fn main() {
         set_fullscreen: false,
         set_portable: false,
         mouse_enabled: true,
+        audio_enabled: true,
         seed: String::new(),
         selected_generator: SelectedGenerator::RD,
     };
@@ -237,7 +250,8 @@ fn main() {
                 .set("Size", "20")
                 .set("Generator", "RD")
                 .set("Collisions", "1")
-                .set("Mouse", "1");
+                .set("Mouse", "1")
+                .set("Audio", "1");
 
             conf.write_to_file(config_path).unwrap();
         } else { //Config file exists, try loading 
@@ -263,6 +277,10 @@ fn main() {
 
             if section.get("Mouse").unwrap() == "0" {
                 program_config.mouse_enabled = false;
+            }
+
+            if section.get("Audio").unwrap() == "0" {
+                program_config.audio_enabled = false;
             }
         }
     } 
@@ -461,7 +479,14 @@ fn main() {
         setup_gl_texture(maze_textures[2], assets_path.join("ceiling.png").to_str().unwrap());
         setup_gl_texture(maze_textures[3], assets_path.join("exit.png").to_str().unwrap());
     }
-    
+
+    //Setup audio
+    let mut audio_manager =
+		AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
+
+    let step_sound_data = StaticSoundData::from_file(assets_path.join("steps.wav"), StaticSoundSettings::new().loop_region(0.0..)).unwrap();
+    let ambience_sound_data = StaticSoundData::from_file(assets_path.join("ambience.ogg"), StaticSoundSettings::new().loop_region(0.0..)).unwrap();
+
     //Setup projection matrix (model and view matrices will be set in main loop)
     let projection = cgmath::perspective(Deg(45 as f32), 
                                                     (program_config.window_width as f32)/(program_config.window_height as f32), 
@@ -474,7 +499,6 @@ fn main() {
 
     let mut camera_yaw = -90.0;
     let mut camera_pitch = 0.0;
-
 
     if program_config.mouse_enabled {
         window.set_cursor_visible(false);
@@ -490,6 +514,13 @@ fn main() {
     let mut camera_speed = 90.0;
 
     let mut key_table = vec![false; 255].into_boxed_slice();
+
+    let mut step_sound_playing = false;
+    let mut step_sound: Option<StaticSoundHandle> = Default::default();
+
+    if program_config.audio_enabled {
+        audio_manager.play(ambience_sound_data).unwrap();
+    }
 
     //Main loop
     event_loop.run(move |event, window_target| {
@@ -545,7 +576,7 @@ fn main() {
                         camera_speed = 2.5 * time_step;
                     }
 
-                    let movement_speed = 2.5 * time_step;
+                    let movement_speed = 1.4 * time_step;
 
                     //Process input
                     if key_table[KeyCode::KeyW as usize] {
@@ -567,6 +598,11 @@ fn main() {
                                                                 maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                             camera_position = last_position;
                         }
+
+                        if program_config.audio_enabled && !step_sound_playing {
+                            step_sound = Some(audio_manager.play(step_sound_data.clone()).unwrap());
+                            step_sound_playing = true;
+                        }
                     }
     
                     if key_table[KeyCode::KeyS as usize] {
@@ -587,6 +623,20 @@ fn main() {
                                                                 maze_generator.get_maze_size(), maze_generator.get_maze_array()) {
                             camera_position = last_position;
                         }
+
+                        if program_config.audio_enabled && !step_sound_playing {
+                            step_sound = Some(audio_manager.play(step_sound_data.clone()).unwrap());
+                            step_sound_playing = true;
+                        }
+                    }
+
+                    //Player is not moving so stop step sound if it's playing
+                    if !key_table[KeyCode::KeyW as usize] && !key_table[KeyCode::KeyS as usize] && step_sound_playing {
+                        if let Some(step_sound) = &mut step_sound {
+                            step_sound.stop(Tween::default()).unwrap();
+                        }
+
+                        step_sound_playing = false;
                     }
     
                     if key_table[KeyCode::KeyA as usize] {

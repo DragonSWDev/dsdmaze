@@ -1,0 +1,17 @@
+Graphics assets (files with png extension) were created by me (DragonSWDev) and are distributed under the terms of CC BY 4.0 license.
+License details:
+https://creativecommons.org/licenses/by/4.0/ 
+
+ambience.ogg is Spooky Ambience #2 by KRISTIANKULTA distributed under the terms of CC BY 4.0 Deed license.
+File source:
+https://freesound.org/people/KRISTIANKULTA/sounds/368309/
+
+License details:
+https://creativecommons.org/licenses/by/4.0/
+
+steps.wav is Steps on concrete, indoor by areniporgen distributed under the terms of CC0 1.0 Deed license.
+File source:
+https://freesound.org/people/areniporgen/sounds/712084/
+
+License details:
+https://creativecommons.org/publicdomain/zero/1.0/
