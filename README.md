@@ -46,4 +46,4 @@ Configuration file is located in following directories:
 By default camera is controlled by mouse and W/S keys are used for moving forward/backward. When mouse control is disabled then camera is rotated left and right by A and D keys.
 
 ## License
-glmaze-rs is distributed under the terms of MIT License. Project depends on OpenGL, SDL2 and following Rust crates: winit, glutin, glutin-winit, raw-window-handle, dirs, gl, image, cgmath, rand, rand_seeder, rand_pcg and rust-ini. For information about licensing check their respecitve websites. Assets are distributed under different licenses, for details check [license.txt](/assets/license.txt) file in assets directory.  
+glmaze-rs is distributed under the terms of MIT License. Project depends on OpenGL, SDL2 and following Rust crates: winit, glutin, glutin-winit, raw-window-handle, dirs, gl, image, cgmath, rand, rand_seeder, rand_pcg, rust-ini and kira. For information about licensing check their respecitve websites. Assets are distributed under different licenses, for details check [license.txt](/assets/license.txt) file in assets directory.  
