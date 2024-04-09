@@ -1,8 +1,6 @@
 extern crate gl;
-extern crate cgmath;
 
 use gl::types::*;
-use cgmath::{Matrix, Array, Matrix4, Vector3};
 use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
@@ -81,7 +79,7 @@ impl ShaderManager {
         }
     }
 
-    pub fn set_uniform_matrix4fv(&mut self, name: &str, uniform: Matrix4<f32>) {
+    pub fn set_uniform_matrix4fv(&mut self, name: &str, uniform: glm::Mat4) {
         unsafe {
             let uniform_name = CString::new(name).unwrap();
             let location = gl::GetUniformLocation(self.program_id, uniform_name.as_ptr());
@@ -89,7 +87,7 @@ impl ShaderManager {
         }
     }
 
-    pub fn set_uniform_vec3fv(&mut self, name: &str, uniform: Vector3<f32>) {
+    pub fn set_uniform_vec3fv(&mut self, name: &str, uniform: glm::Vec3) {
         unsafe {
             let uniform_name = CString::new(name).unwrap();
             let location = gl::GetUniformLocation(self.program_id, uniform_name.as_ptr());

@@ -1,7 +1,7 @@
 extern crate dirs;
 extern crate gl;
 extern crate image;
-extern crate cgmath;
+extern crate nalgebra_glm as glm;
 
 use std::ffi::{CStr, c_void, CString};
 use std::{fs, mem, ptr, cmp, env};
@@ -16,8 +16,6 @@ use glutin::surface::GlSurface;
 use glutin_winit::{DisplayBuilder, GlWindow};
 
 use ini::Ini;
-
-use cgmath::{Angle, Deg, EuclideanSpace, InnerSpace, Matrix3, Matrix4, Point3, Vector3};
 
 use gl::types::*;
 
@@ -488,14 +486,12 @@ fn main() {
     let ambience_sound_data = StaticSoundData::from_file(assets_path.join("ambience.ogg"), StaticSoundSettings::new().loop_region(0.0..)).unwrap();
 
     //Setup projection matrix (model and view matrices will be set in main loop)
-    let projection = cgmath::perspective(Deg(45 as f32), 
-                                                    (program_config.window_width as f32)/(program_config.window_height as f32), 
-                                                    0.1, 100.0);
+    let projection = glm::perspective((program_config.window_width as f32)/(program_config.window_height as f32), f32::to_radians(45.0), 0.1, 100.0);
 
     //Camera setup
-    let mut camera_position: Vector3<f32> = Vector3::new(maze_generator.get_start_position().0 as f32, 0.0, maze_generator.get_start_position().1 as f32);
-    let mut camera_front: Vector3<f32> = Vector3::new(0.0, 0.0, -1.0);
-    let camera_up: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
+    let mut camera_position = glm::vec3(maze_generator.get_start_position().0 as f32, 0.0, maze_generator.get_start_position().1 as f32);
+    let mut camera_front = glm::vec3(0.0, 0.0, -1.0);
+    let camera_up = glm::vec3(0.0, 1.0, 0.0);
 
     let mut camera_yaw = -90.0;
     let mut camera_pitch = 0.0;
@@ -558,7 +554,8 @@ fn main() {
                 }
             }
             Event::AboutToWait => {
-                let view = Matrix4::look_at_rh(Point3::from_vec(camera_position), Point3::from_vec(camera_position + camera_front), camera_up);
+                let camera_center = camera_position + camera_front;
+                let view = glm::look_at(&camera_position, &camera_center, &camera_up);
 
                 let current_frame = time_start.elapsed().as_secs_f32();
                 let frame_time = f32::max(0.0, current_frame - last_frame);
@@ -573,7 +570,7 @@ fn main() {
                         camera_speed = 10.0 * time_step;
                     }
                     else {
-                        camera_speed = 2.5 * time_step;
+                        camera_speed = 80.0 * time_step;
                     }
 
                     let movement_speed = 1.4 * time_step;
@@ -657,16 +654,16 @@ fn main() {
 
                 //Setup camera front
                 if program_config.mouse_enabled {
-                    let camera_direction: Vector3<f32> = Vector3::new(cgmath::Deg(camera_yaw).cos() * cgmath::Deg(camera_pitch).cos(), 
-                                                                    cgmath::Deg(camera_pitch).sin(), 
-                                                                    cgmath::Deg(camera_yaw).sin() * cgmath::Deg(camera_pitch).cos());
+                    let camera_direction = glm::vec3(camera_yaw.to_radians().cos() * camera_pitch.to_radians().cos(), 
+                        camera_pitch.to_radians().sin(), 
+                        camera_yaw.to_radians().sin() * camera_pitch.to_radians().cos());
 
-                    camera_front = camera_direction.normalize();
+                    camera_front = glm::normalize(&camera_direction);
                 }
                 else { 
-                    camera_front = Vector3::new(cgmath::Rad(camera_yaw).cos(), 
-                                                cgmath::Rad(0.0).sin(), 
-                                                cgmath::Rad(camera_yaw).sin());
+                    camera_front = glm::vec3(camera_yaw.to_radians().cos(),
+                        0.0,
+                        camera_yaw.to_radians().sin());
                 }
 
                 //End game if player is near to exit
@@ -681,7 +678,7 @@ fn main() {
                 main_shader.set_uniform_matrix4fv("view", view);
                 main_shader.set_uniform_matrix4fv("projection", projection);
 
-                main_shader.set_uniform_vec3fv("lightColor", cgmath::Vector3::new(1.0, 1.0, 1.0));
+                main_shader.set_uniform_vec3fv("lightColor", glm::vec3(1.0, 1.0, 1.0));
                 main_shader.set_uniform_vec3fv("lightVector", camera_position);
 
                 //Begin rendering
@@ -716,13 +713,12 @@ fn main() {
 
                         //Draw walls
                         //Left wall
-                        if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j - 1) as usize] {
-                            let model = {
-                                let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) - 0.5, 0.0, (i*1) as f32));
-                                let rotation = Matrix3::from_angle_y(Deg(-90.0));
-                                position * Matrix4::from(rotation)
-                            };
-                
+                        if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j - 1) as usize] {                            
+                            let mut model = glm::Mat4::identity();
+                            model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
+                            model = glm::translate(&model, &glm::vec3(-0.5, 0.0, 0.0)); //Move left a bit
+                            model = glm::rotate(&model, f32::to_radians(-90.0), &glm::vec3(0.0, 1.0, 0.0)); //Rotate by 90 degrees around Y
+
                             main_shader.set_uniform_matrix4fv("model", model);
 
                             unsafe {
@@ -732,11 +728,10 @@ fn main() {
 
                         //Right wall
                         if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + (j + 1) as usize] {
-                            let model = {
-                                let position = Matrix4::from_translation(Vector3::new(((j*1) as f32) + 0.5, 0.0, (i*1) as f32));
-                                let rotation = Matrix3::from_angle_y(Deg(90.0));
-                                position * Matrix4::from(rotation)
-                            };
+                            let mut model = glm::Mat4::identity();
+                            model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
+                            model = glm::translate(&model, &glm::vec3(0.5, 0.0, 0.0)); //Move right a bit
+                            model = glm::rotate(&model, f32::to_radians(90.0), &glm::vec3(0.0, 1.0, 0.0)); //Rotate by 90 degrees around Y
                 
                             main_shader.set_uniform_matrix4fv("model", model);
 
@@ -747,11 +742,10 @@ fn main() {
 
                         //Front wall
                         if maze_generator.get_maze_array()[(i - 1) as usize * maze_generator.get_maze_size() + j as usize] {
-                            let model = {
-                                let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) - 0.5));
-                                let rotation = Matrix3::from_angle_y(Deg(180.0));
-                                position * Matrix4::from(rotation)
-                            };
+                            let mut model = glm::Mat4::identity();
+                            model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
+                            model = glm::translate(&model, &glm::vec3(0.0, 0.0, -0.5)); //Move front a bit
+                            model = glm::rotate(&model, f32::to_radians(180.0), &glm::vec3(0.0, 1.0, 0.0));
                 
                             main_shader.set_uniform_matrix4fv("model", model);
 
@@ -762,10 +756,9 @@ fn main() {
 
                         //Back wall
                         if maze_generator.get_maze_array()[(i + 1) as usize * maze_generator.get_maze_size() + j as usize] {
-                            let model = {
-                                let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, ((i*1) as f32) + 0.5));
-                                position
-                            };
+                            let mut model = glm::Mat4::identity();
+                            model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
+                            model = glm::translate(&model, &glm::vec3(0.0, 0.0, 0.5)); //Move back a bit
                 
                             main_shader.set_uniform_matrix4fv("model", model);
 
@@ -779,11 +772,10 @@ fn main() {
                             gl::BindTexture(gl::TEXTURE_2D, maze_textures[1]);
                         }
 
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new((j*1) as f32, -0.5, (i*1) as f32));
-                            let rotation = Matrix3::from_angle_x(Deg(90.0));
-                            position * Matrix4::from(rotation)
-                        };
+                        let mut model = glm::Mat4::identity();
+                        model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0));
+                        model = glm::translate(&model, &glm::vec3(0.0, -0.5, 0.0));
+                        model = glm::rotate(&model, f32::to_radians(90.0), &glm::vec3(1.0, 0.0, 0.0));
             
                         main_shader.set_uniform_matrix4fv("model", model);
 
@@ -796,11 +788,10 @@ fn main() {
                             gl::BindTexture(gl::TEXTURE_2D, maze_textures[2]);
                         }
 
-                        let model = {
-                            let position = Matrix4::from_translation(Vector3::new((j*1) as f32, 0.5, (i*1) as f32));
-                            let rotation = Matrix3::from_angle_x(Deg(-90.0));
-                            position * Matrix4::from(rotation)
-                        };
+                        let mut model = glm::Mat4::identity();
+                        model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0));
+                        model = glm::translate(&model, &glm::vec3(0.0, 0.5, 0.0));
+                        model = glm::rotate(&model, f32::to_radians(-90.0), &glm::vec3(1.0, 0.0, 0.0));
                             
                         main_shader.set_uniform_matrix4fv("model", model);
 
@@ -809,43 +800,29 @@ fn main() {
                         }
 
                         //Draw exit if it's visible
-                        let model;
+                        //let model;
                         if j == maze_generator.get_exit().0 as i32 && i == maze_generator.get_exit().1 as i32 {
                             unsafe {
                                 gl::BindTexture(gl::TEXTURE_2D, maze_textures[3]);
                             }
+
+                            let mut model = glm::Mat4::identity();
                     
                             match maze_generator.get_end_border() {
                                 Direction::Top => {
-                                    model = {
-                                        let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) - 0.5));
-                                        let rotation = Matrix3::from_angle_y(Deg(180.0));
-    
-                                        position * Matrix4::from(rotation)
-                                    };
+                                    model = model * glm::translate(&model, &glm::vec3(j as f32, 0.0, (i as f32) - 0.5));
+                                    model = model * glm::rotate(&model, f32::to_radians(180.0), &glm::vec3(0.0, 1.0, 0.0));
                                 },
                                 Direction::Bottom => {
-                                    model = {
-                                        let position = Matrix4::from_translation(Vector3::new(j as f32, 0.0, (i as f32) + 0.5));
-    
-                                        position
-                                    };
+                                    model = model * glm::translate(&model, &glm::vec3(j as f32, 0.0, (i as f32) + 0.5));
                                 },
                                 Direction::Left => {
-                                    model = {
-                                        let position = Matrix4::from_translation(Vector3::new((j as f32) - 0.5, 0.0, i as f32));
-                                        let rotation = Matrix3::from_angle_y(Deg(-90.0));
-    
-                                        position * Matrix4::from(rotation)
-                                    };
+                                    model = model * glm::translate(&model, &glm::vec3((j as f32) - 0.5, 0.0, i as f32));
+                                    model = model * glm::rotate(&model, f32::to_radians(-90.0), &glm::vec3(0.0, 1.0, 0.0));
                                 },
                                 Direction::Right => {
-                                    model = {
-                                        let position = Matrix4::from_translation(Vector3::new((j as f32) + 0.5, 0.0, i as f32));
-                                        let rotation = Matrix3::from_angle_y(Deg(90.0));
-    
-                                        position * Matrix4::from(rotation)
-                                    };
+                                    model = model * glm::translate(&model, &glm::vec3((j as f32) + 0.5, 0.0, i as f32));
+                                    model = model * glm::rotate(&model, f32::to_radians(90.0), &glm::vec3(0.0, 1.0, 0.0));
                                 },
                             }
 
