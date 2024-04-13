@@ -7,13 +7,13 @@ use std::io::prelude::*;
 use std::ffi::CString;
 use std::ptr;
 
-pub struct ShaderManager {
+pub struct GlShader {
     program_id: GLuint,     
 }
 
-impl ShaderManager {
-    pub fn new() -> ShaderManager {
-        ShaderManager {
+impl GlShader {
+    pub fn new() -> GlShader {
+        GlShader {
             program_id: 0,
         }
     }
@@ -92,6 +92,12 @@ impl ShaderManager {
             let uniform_name = CString::new(name).unwrap();
             let location = gl::GetUniformLocation(self.program_id, uniform_name.as_ptr());
             gl::Uniform3fv(location, 1, uniform.as_ptr());
+        }
+    }
+
+    pub fn delete_program(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.program_id);
         }
     }
 }

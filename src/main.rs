@@ -3,26 +3,16 @@ extern crate gl;
 extern crate image;
 extern crate nalgebra_glm as glm;
 
-use std::ffi::{CStr, c_void, CString};
-use std::{fs, mem, ptr, cmp, env};
+use std::{fs, cmp, env};
 use std::time::*;
+use maze_renderer::RenderingAPI;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 
-use glutin::config::{GlConfig, ConfigTemplateBuilder};
-use glutin::context::{ContextApi, ContextAttributesBuilder, Version, GlProfile, NotCurrentGlContext};
-use glutin::display::{GetGlDisplay, GlDisplay};
-use glutin::surface::GlSurface;
-use glutin_winit::{DisplayBuilder, GlWindow};
-
 use ini::Ini;
 
-use gl::types::*;
-
-mod shader_manager;
 mod maze_generator;
-
-use raw_window_handle::HasRawWindowHandle;
+mod maze_renderer;
 
 use winit::dpi::LogicalSize;
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
@@ -36,17 +26,20 @@ use kira::{
 	tween::Tween,
 };
 
-use shader_manager::ShaderManager;
 use maze_generator::{MazeGenerator, SelectedGenerator, Direction};
 
+use crate::maze_renderer::gl_renderer::GLRenderer;
+use crate::maze_renderer::vulkan_renderer::VulkanRenderer;
+use crate::maze_renderer::{MazeRenderer, UniformData};
+
                                     //Vertex position   //Texture UV    //Normal vector
-static VERTEX_DATA: [GLfloat; 32] = [ 0.5,  0.5, 0.0,    1.0, 1.0,       0.0, 0.0, 1.0,
+static VERTEX_DATA: [f32; 32] =   [ 0.5,  0.5, 0.0,     1.0, 1.0,       0.0, 0.0, 1.0,
                                     0.5, -0.5, 0.0,     1.0, 0.0,       0.0, 0.0, 1.0,
                                     -0.5, -0.5, 0.0,    0.0, 0.0,       0.0, 0.0, 1.0,
                                     -0.5,  0.5, 0.0,    0.0, 1.0,       0.0, 0.0, 1.0];
 
-static VERTEX_INDICES: [GLint; 6] = [0, 1, 3, //First triangle
-                                      1, 2, 3]; //Second triangle
+static VERTEX_INDICES: [u32; 6] = [0, 1, 3, //First triangle
+                                   1, 2, 3]; //Second triangle
 
 struct ProgramConfig {
     window_width: u32,
@@ -58,7 +51,8 @@ struct ProgramConfig {
     mouse_enabled: bool,
     audio_enabled: bool,
     seed: String,
-    selected_generator: SelectedGenerator
+    selected_generator: SelectedGenerator,
+    rendering_api: RenderingAPI
 }
 
 //Check collision between point and rectangle
@@ -106,24 +100,6 @@ fn check_collision(player_x: f32, player_z: f32, maze_size: usize, maze_array: &
     }
 
     collision_occured
-}
-
-//Load image from path and setup OpenGL texture with it
-unsafe fn setup_gl_texture(texture_id: GLuint, texture_file: &str) {
-    let texture = image::open(texture_file).unwrap().into_rgba8();
-
-    gl::BindTexture(gl::TEXTURE_2D, texture_id);
-
-    //Setup wrapping and filtering
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-
-    gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, texture.width() as i32, texture.height() as i32, 
-                    0, gl::RGBA, gl::UNSIGNED_BYTE, texture.into_raw().as_ptr() as *const c_void);
-
-    gl::GenerateMipmap(gl::TEXTURE_2D);
 }
 
 //Parse command line arguments and setup program values
@@ -196,6 +172,16 @@ fn parse_commandline_arguments(arguments: Vec<String>, config: &mut ProgramConfi
         if argument.contains("-disable-audio") {
             config.audio_enabled = false;
         }
+
+        //Set rendering API
+        if argument.contains("-rendering-api=") && argument.len() > 15 {
+            let slice = &argument[15..];
+
+            match slice {
+                "OpenGL" => config.rendering_api = RenderingAPI::OPENGL,
+                _ => config.rendering_api = RenderingAPI::VULKAN
+            }
+        }
     }
 }
 
@@ -213,6 +199,7 @@ fn main() {
         audio_enabled: true,
         seed: String::new(),
         selected_generator: SelectedGenerator::RD,
+        rendering_api: RenderingAPI::VULKAN
     };
 
     if args.iter().any(|e| e.contains("-portable")) {
@@ -249,7 +236,8 @@ fn main() {
                 .set("Generator", "RD")
                 .set("Collisions", "1")
                 .set("Mouse", "1")
-                .set("Audio", "1");
+                .set("Audio", "1")
+                .set("RenderingAPI", "Vulkan");
 
             conf.write_to_file(config_path).unwrap();
         } else { //Config file exists, try loading 
@@ -280,6 +268,11 @@ fn main() {
             if section.get("Audio").unwrap() == "0" {
                 program_config.audio_enabled = false;
             }
+
+            match section.get("RenderingAPI").unwrap() {
+                "Vulkan" => program_config.rendering_api = RenderingAPI::VULKAN,
+                _ => program_config.rendering_api = RenderingAPI::OPENGL
+            }
         }
     } 
 
@@ -302,52 +295,39 @@ fn main() {
     let window_builder;
 
     if program_config.set_fullscreen {
-        window_builder = Some(WindowBuilder::new().with_title("glmaze-rs")
-                                                .with_fullscreen(Some(Fullscreen::Borderless(None))));   
+        window_builder = WindowBuilder::new().with_title("glmaze-rs")
+                                                .with_fullscreen(Some(Fullscreen::Borderless(None)));   
     }
     else {
-        window_builder = Some(WindowBuilder::new().with_title("glmaze-rs")
-                                                .with_resizable(false)
-                                                .with_inner_size(LogicalSize::new(program_config.window_width, program_config.window_height)));   
-    }                                  
+        window_builder = WindowBuilder::new().with_title("glmaze-rs")
+                                                .with_inner_size(LogicalSize::new(program_config.window_width, program_config.window_height));   
+    }                  
 
-    let display_builder = DisplayBuilder::new().with_window_builder(window_builder);
+    program_config.rendering_api = RenderingAPI::OPENGL;
+    program_config.mouse_enabled = false;                
 
-    let (window, gl_config) = display_builder.build(&event_loop, ConfigTemplateBuilder::new(), |configs| {
-        configs
-            .reduce(|accum, config| {
-                if config.num_samples() > accum.num_samples() {
-                    config
-                } else {
-                    accum
-                }
-            })
-            .unwrap()
-    }).unwrap();
+    let window;
 
-    let gl_display = gl_config.display();
-    let raw_window_handle = window.as_ref().map(|window| window.raw_window_handle());
-    let window = window.unwrap();
-    let attrs = window.build_surface_attributes(Default::default());
+    let mut maze_renderer = match program_config.rendering_api {
+        RenderingAPI::VULKAN => {
+            window = window_builder.build(&event_loop).unwrap();
+            let vulkan_renderer = VulkanRenderer::new(&window);
 
-    let gl_surface = unsafe {
-        gl_display.create_window_surface(&gl_config, &attrs).unwrap()
-    };
+            MazeRenderer::new(Box::new(vulkan_renderer))
+        },
+        _ => {
+            let opengl_renderer = GLRenderer::new(window_builder, &event_loop);
+            window = opengl_renderer.1;
 
-    let context_attributes = ContextAttributesBuilder::new()
-        .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 2))))
-        .with_profile(GlProfile::Core)
-        .build(raw_window_handle);
-
-    let gl_context = unsafe {
-        gl_display.create_context(&gl_config, &context_attributes).expect("Failed to create OpenGL context.").make_current(&gl_surface).unwrap()
+            MazeRenderer::new(Box::new(opengl_renderer.0))
+        }
     };
 
     program_config.window_width = window.inner_size().width;
     program_config.window_height = window.inner_size().height;
 
     //Print selected options
-    println!("Selected options:");
+    println!("\nSelected options:");
     print!("Resolution: {}x{} ", program_config.window_width, program_config.window_height);
 
     if program_config.set_fullscreen {
@@ -361,6 +341,7 @@ fn main() {
     println!("Collisions: {}", program_config.enable_collisions);
     println!("Mouse control: {}", program_config.mouse_enabled);
     println!("Selected generator: {}", program_config.selected_generator);
+    println!("Rendering API: {}", program_config.rendering_api);
 
     //Generate random seed if it wasn't provided
     if program_config.seed.is_empty() {
@@ -374,35 +355,6 @@ fn main() {
     //Setup and generate maze
     let mut maze_generator = MazeGenerator::new(program_config.selected_generator, program_config.maze_size, program_config.seed);
     maze_generator.generate_maze();
-
-    gl::load_with(|symbol| {
-        let symbol = CString::new(symbol).unwrap();
-        gl_display.get_proc_address(symbol.as_c_str()).cast()
-    });
-
-    //Print details about OpenGL context
-    println!("OpenGL initialized.");
-
-    unsafe {
-        let vendor = gl::GetString(gl::VENDOR) as *const i8;
-        let vendor = String::from_utf8(CStr::from_ptr(vendor).to_bytes().to_vec()).unwrap();
-
-        let renderer = gl::GetString(gl::RENDERER) as *const i8;
-        let renderer = String::from_utf8(CStr::from_ptr(renderer).to_bytes().to_vec()).unwrap();
-
-        let version = gl::GetString(gl::VERSION) as *const i8;
-        let version = String::from_utf8(CStr::from_ptr(version).to_bytes().to_vec()).unwrap();
-
-        println!("Vendor: {}", vendor);
-        println!("Renderer: {}", renderer);
-        println!("Version: {}", version);
-    }
-
-    //Enable depth buffer and face culling
-    unsafe {
-        gl::Enable(gl::DEPTH_TEST);
-        gl::Enable(gl::CULL_FACE);
-    }
 
     let mut install_path = env::current_exe().expect("Failed to get current path.");
     install_path.pop();
@@ -424,59 +376,26 @@ fn main() {
 
     let shaders_path = install_path.join("shaders");
 
-    //Setup shaders
-    let mut main_shader = ShaderManager::new();
-    main_shader.load_shaders(shaders_path.join("vertexshader.vert").to_str().unwrap(), 
-                           shaders_path.join("fragmentshader.frag").to_str().unwrap()).unwrap();
+    let mut maze_textures_paths = Vec::new();
+    maze_textures_paths.push(assets_path.join("wall.png").to_str().unwrap().to_string());
+    maze_textures_paths.push(assets_path.join("floor.png").to_str().unwrap().to_string());
+    maze_textures_paths.push(assets_path.join("ceiling.png").to_str().unwrap().to_string());
+    maze_textures_paths.push(assets_path.join("exit.png").to_str().unwrap().to_string());
 
-    //Setup VAO, VBO and EBO
-    let mut vertex_array_object: GLuint = 0;
-    let mut vertex_buffer_object: GLuint = 0;
-    let mut element_buffer_object: GLuint = 0;
+    maze_renderer.renderer.load_textures(maze_textures_paths);
 
-    unsafe {
-        //VAO
-        gl::GenVertexArrays(1, &mut vertex_array_object);
-        gl::BindVertexArray(vertex_array_object);
-
-        //VBO
-        gl::GenBuffers(1, &mut vertex_buffer_object);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer_object);
-        gl::BufferData(gl::ARRAY_BUFFER, (VERTEX_DATA.len()*mem::size_of::<GLfloat>()) as GLsizeiptr,
-                        VERTEX_DATA.as_ptr() as *const gl::types::GLvoid, gl::STATIC_DRAW);
-        
-        //VBO Position
-        gl::EnableVertexAttribArray(0);
-        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 8 * mem::size_of::<GLfloat>() as i32, ptr::null());
-
-        //VBO Texture UV
-        gl::EnableVertexAttribArray(1);
-        gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, 8 * mem::size_of::<GLfloat>() as i32, 
-                            (3 * std::mem::size_of::<f32>()) as *const gl::types::GLvoid);
-
-        //VBO Normal vector
-        gl::EnableVertexAttribArray(2);
-        gl::VertexAttribPointer(2, 3, gl::FLOAT, gl::FALSE, 8 * mem::size_of::<GLfloat>() as i32, 
-                            (5 * std::mem::size_of::<f32>()) as *const gl::types::GLvoid);
-
-        //EBO
-        gl::GenBuffers(1, &mut element_buffer_object);
-        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_object);
-        gl::BufferData(gl::ELEMENT_ARRAY_BUFFER, (VERTEX_INDICES.len()*mem::size_of::<GLint>()) as GLsizeiptr,
-                        VERTEX_INDICES.as_ptr() as *const gl::types::GLvoid, gl::STATIC_DRAW);
+    match program_config.rendering_api {
+        RenderingAPI::VULKAN => {
+            maze_renderer.renderer.load_shaders(shaders_path.join("vk").join("vertexshader.spv").to_str().unwrap(), 
+                shaders_path.join("vk").join("fragmentshader.spv").to_str().unwrap());
+        },
+        RenderingAPI::OPENGL => {
+            maze_renderer.renderer.load_shaders(shaders_path.join("gl").join("vertexshader.vert").to_str().unwrap(), 
+                shaders_path.join("gl").join("fragmentshader.frag").to_str().unwrap());
+        }
     }
 
-    //Setup textures
-    let mut maze_textures: [GLuint; 4] = [0; 4];
-    
-    unsafe {
-        gl::GenTextures(4, maze_textures.as_mut_ptr());
-
-        setup_gl_texture(maze_textures[0], assets_path.join("wall.png").to_str().unwrap());
-        setup_gl_texture(maze_textures[1], assets_path.join("floor.png").to_str().unwrap());
-        setup_gl_texture(maze_textures[2], assets_path.join("ceiling.png").to_str().unwrap());
-        setup_gl_texture(maze_textures[3], assets_path.join("exit.png").to_str().unwrap());
-    }
+    maze_renderer.renderer.init_mesh(VERTEX_DATA.to_vec(), VERTEX_INDICES.to_vec());
 
     //Setup audio
     let mut audio_manager =
@@ -484,9 +403,6 @@ fn main() {
 
     let step_sound_data = StaticSoundData::from_file(assets_path.join("steps.wav"), StaticSoundSettings::new().loop_region(0.0..)).unwrap();
     let ambience_sound_data = StaticSoundData::from_file(assets_path.join("ambience.ogg"), StaticSoundSettings::new().loop_region(0.0..)).unwrap();
-
-    //Setup projection matrix (model and view matrices will be set in main loop)
-    let projection = glm::perspective((program_config.window_width as f32)/(program_config.window_height as f32), f32::to_radians(45.0), 0.1, 100.0);
 
     //Camera setup
     let mut camera_position = glm::vec3(maze_generator.get_start_position().0 as f32, 0.0, maze_generator.get_start_position().1 as f32);
@@ -530,7 +446,13 @@ fn main() {
                     if let PhysicalKey::Code(code) = event.physical_key {
                         key_table[code as usize] = event.state.is_pressed();
                     }
-                }
+                },
+                WindowEvent::Resized(new_size) => {
+                    program_config.window_width = new_size.width;
+                    program_config.window_height = new_size.height;
+
+                    maze_renderer.renderer.resize_viewport(new_size.width, new_size.height);
+                },
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => {
@@ -556,6 +478,18 @@ fn main() {
             Event::AboutToWait => {
                 let camera_center = camera_position + camera_front;
                 let view = glm::look_at(&camera_position, &camera_center, &camera_up);
+
+                //Setup projection matrix
+                let projection = match program_config.rendering_api {
+                    RenderingAPI::OPENGL => glm::perspective((program_config.window_width as f32)/(program_config.window_height as f32), f32::to_radians(45.0), 0.1, 100.0),
+                    RenderingAPI::VULKAN => {
+                        let mut projection = glm::perspective_rh_zo((program_config.window_width as f32)/(program_config.window_height as f32), 
+                            f32::to_radians(45.0), 0.1, 100.0);
+                        projection[5] *= -1.0; //Invert [1][1] component to invert Y on Vulkan
+
+                        projection
+                    }
+                };
 
                 let current_frame = time_start.elapsed().as_secs_f32();
                 let frame_time = f32::max(0.0, current_frame - last_frame);
@@ -672,43 +606,31 @@ fn main() {
                     window_target.exit();
                 } 
 
-                //Setup uniforms in shaders
-                main_shader.use_shader();
-
-                main_shader.set_uniform_matrix4fv("view", view);
-                main_shader.set_uniform_matrix4fv("projection", projection);
-
-                main_shader.set_uniform_vec3fv("lightColor", glm::vec3(1.0, 1.0, 1.0));
-                main_shader.set_uniform_vec3fv("lightVector", camera_position);
+                //Setup uniforms
+                maze_renderer.renderer.update_uniform_data(UniformData {
+                    view_matrix: view,
+                    projection_matrix: projection,
+                    light_position: camera_position,
+                    light_color: glm::vec3(1.0, 1.0, 1.0),
+                    _padding: Default::default(),
+                });
 
                 //Begin rendering
-                unsafe {
-                    gl::ClearColor(0.0, 0.0, 0.0, 1.0);
-                    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-                    gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
-                    
-                    gl::BindVertexArray(vertex_array_object);
-                }
+                maze_renderer.renderer.clear_color([0.0, 0.0, 0.0, 1.0]);
 
                 //Maze rendering
                 //Only small area around the player needs to be drawn
                 //Calculate start and end row and column based on player position
-                let start_row = cmp::max(1, camera_position.z as i32 - 15);
-                let start_column = cmp::max(1, camera_position.x as i32 - 15);
-                let end_row = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.z as i32 + 15);
-                let end_column = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.x as i32 + 15);
+                let start_row = cmp::max(1, camera_position.z as i32 - 10);
+                let start_column = cmp::max(1, camera_position.x as i32 - 10);
+                let end_row = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.z as i32 + 10);
+                let end_column = cmp::min(maze_generator.get_maze_size() as i32 - 1, camera_position.x as i32 + 10);
 
                 for i in start_row..end_row {
                     for j in start_column..end_column {
                         //Don't draw walls around non empty field (they won't be visible)
                         if maze_generator.get_maze_array()[i as usize * maze_generator.get_maze_size() + j as usize] {
                             continue;
-                        }
-
-                        //Bind wall texture
-                        unsafe {
-                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[0]);
                         }
 
                         //Draw walls
@@ -719,11 +641,7 @@ fn main() {
                             model = glm::translate(&model, &glm::vec3(-0.5, 0.0, 0.0)); //Move left a bit
                             model = glm::rotate(&model, f32::to_radians(-90.0), &glm::vec3(0.0, 1.0, 0.0)); //Rotate by 90 degrees around Y
 
-                            main_shader.set_uniform_matrix4fv("model", model);
-
-                            unsafe {
-                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                            }
+                            maze_renderer.renderer.draw(model, 0);
                         }
 
                         //Right wall
@@ -732,12 +650,8 @@ fn main() {
                             model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
                             model = glm::translate(&model, &glm::vec3(0.5, 0.0, 0.0)); //Move right a bit
                             model = glm::rotate(&model, f32::to_radians(90.0), &glm::vec3(0.0, 1.0, 0.0)); //Rotate by 90 degrees around Y
-                
-                            main_shader.set_uniform_matrix4fv("model", model);
 
-                            unsafe {
-                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                            }
+                            maze_renderer.renderer.draw(model, 0);
                         }
 
                         //Front wall
@@ -747,11 +661,7 @@ fn main() {
                             model = glm::translate(&model, &glm::vec3(0.0, 0.0, -0.5)); //Move front a bit
                             model = glm::rotate(&model, f32::to_radians(180.0), &glm::vec3(0.0, 1.0, 0.0));
                 
-                            main_shader.set_uniform_matrix4fv("model", model);
-
-                            unsafe {
-                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                            }
+                            maze_renderer.renderer.draw(model, 0);
                         }
 
                         //Back wall
@@ -760,52 +670,27 @@ fn main() {
                             model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0)); //Move to right position
                             model = glm::translate(&model, &glm::vec3(0.0, 0.0, 0.5)); //Move back a bit
                 
-                            main_shader.set_uniform_matrix4fv("model", model);
-
-                            unsafe {
-                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                            }
+                            maze_renderer.renderer.draw(model, 0);
                         }
 
                         //Floor
-                        unsafe {
-                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[1]);
-                        }
-
                         let mut model = glm::Mat4::identity();
                         model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0));
                         model = glm::translate(&model, &glm::vec3(0.0, -0.5, 0.0));
                         model = glm::rotate(&model, f32::to_radians(90.0), &glm::vec3(1.0, 0.0, 0.0));
             
-                        main_shader.set_uniform_matrix4fv("model", model);
-
-                        unsafe {
-                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                        }
+                        maze_renderer.renderer.draw(model, 1);
 
                         //Ceiling
-                        unsafe {
-                            gl::BindTexture(gl::TEXTURE_2D, maze_textures[2]);
-                        }
-
                         let mut model = glm::Mat4::identity();
                         model = glm::translate(&model, &glm::vec3((j as f32)*1.0, 0.0, (i as f32)*1.0));
                         model = glm::translate(&model, &glm::vec3(0.0, 0.5, 0.0));
                         model = glm::rotate(&model, f32::to_radians(-90.0), &glm::vec3(1.0, 0.0, 0.0));
-                            
-                        main_shader.set_uniform_matrix4fv("model", model);
-
-                        unsafe {
-                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                        }
+            
+                        maze_renderer.renderer.draw(model, 2);
 
                         //Draw exit if it's visible
-                        //let model;
                         if j == maze_generator.get_exit().0 as i32 && i == maze_generator.get_exit().1 as i32 {
-                            unsafe {
-                                gl::BindTexture(gl::TEXTURE_2D, maze_textures[3]);
-                            }
-
                             let mut model = glm::Mat4::identity();
                     
                             match maze_generator.get_end_border() {
@@ -826,19 +711,19 @@ fn main() {
                                 },
                             }
 
-                            main_shader.set_uniform_matrix4fv("model", model);
-
-                            unsafe {
-                                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
-                            }
+                            maze_renderer.renderer.draw(model, 3);
                         }
                     }
                 }
 
                 //Finish rendering
-                gl_surface.swap_buffers(&gl_context).unwrap();
+                maze_renderer.renderer.render();
+
                 window.request_redraw();
             },
+            Event::LoopExiting => {
+                maze_renderer.renderer.cleanup();
+            }
             _ => (),
         }
     }).unwrap();

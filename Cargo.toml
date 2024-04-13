@@ -19,3 +19,6 @@ rand_pcg = "0.3.1"
 rust-ini = "0.19"
 kira = "0.8.7"
 nalgebra-glm = "0.18.0"
+gpu-allocator = "0.25.0"
+ash = {version = "0.37.3", features = ["linked", "debug"]}
+ash-window = "0.12.0"
