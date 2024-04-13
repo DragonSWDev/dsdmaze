@@ -301,10 +301,7 @@ fn main() {
     else {
         window_builder = WindowBuilder::new().with_title("glmaze-rs")
                                                 .with_inner_size(LogicalSize::new(program_config.window_width, program_config.window_height));   
-    }                  
-
-    program_config.rendering_api = RenderingAPI::OPENGL;
-    program_config.mouse_enabled = false;                
+    }                         
 
     let window;
 
