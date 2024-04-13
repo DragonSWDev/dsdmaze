@@ -14,7 +14,7 @@ use ini::Ini;
 mod maze_generator;
 mod maze_renderer;
 
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
@@ -409,9 +409,16 @@ fn main() {
     let mut camera_yaw = -90.0;
     let mut camera_pitch = 0.0;
 
+    let mut cursor_manual_lock = false;
+    let mut last_cursor_position: PhysicalPosition<f64> = PhysicalPosition::new(0.0, 0.0);
+
     if program_config.mouse_enabled {
         window.set_cursor_visible(false);
-        window.set_cursor_grab(winit::window::CursorGrabMode::Locked).unwrap();
+        
+        if window.set_cursor_grab(winit::window::CursorGrabMode::Locked).is_err() {
+            window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+            cursor_manual_lock = true;
+        }
     }
 
     //Setup game values
@@ -450,6 +457,15 @@ fn main() {
 
                     maze_renderer.renderer.resize_viewport(new_size.width, new_size.height);
                 },
+                WindowEvent::CursorMoved { position, .. } => {
+                    if cursor_manual_lock {
+                        if last_cursor_position.x == 0.0 && last_cursor_position.y == 0.0 {
+                            last_cursor_position = position;
+                        }
+
+                        window.set_cursor_position(last_cursor_position).unwrap();
+                    }
+                }
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => {
