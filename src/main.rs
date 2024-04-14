@@ -214,13 +214,13 @@ fn main() {
             fs::create_dir(config_path.clone()).expect("Failed to create config dir.");
         }
 
-        config_path = config_path.join("glmaze-rs");
+        config_path = config_path.join("dsdmaze");
 
         if !config_path.exists() {
             fs::create_dir(config_path.clone()).expect("Failed to create config dir.");
         }
 
-        config_path = config_path.join("glmaze-rs.ini");
+        config_path = config_path.join("dsdmaze.ini");
 
         //Config file doesn't exist so create it with default values
         if !config_path.exists() {
@@ -295,11 +295,11 @@ fn main() {
     let window_builder;
 
     if program_config.set_fullscreen {
-        window_builder = WindowBuilder::new().with_title("glmaze-rs")
+        window_builder = WindowBuilder::new().with_title("dsdmaze")
                                                 .with_fullscreen(Some(Fullscreen::Borderless(None)));   
     }
     else {
-        window_builder = WindowBuilder::new().with_title("glmaze-rs")
+        window_builder = WindowBuilder::new().with_title("dsdmaze")
                                                 .with_inner_size(LogicalSize::new(program_config.window_width, program_config.window_height));   
     }                         
 
