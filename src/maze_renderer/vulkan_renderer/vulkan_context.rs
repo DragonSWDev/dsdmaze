@@ -3,8 +3,8 @@
 
 use std::{ffi::CStr, mem::ManuallyDrop};
 
-use ash::{extensions::{ext::DebugUtils, khr::{Surface, Swapchain}}, vk::{self, ColorSpaceKHR, Extent2D, Format, FormatProperties, Image, ImageView, PhysicalDevice, 
-    PhysicalDeviceProperties, Queue, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR}, Device, Entry, Instance};
+use ash::{extensions::{ext::DebugUtils, khr::{Surface, Swapchain}}, vk::{self, ColorSpaceKHR, Extent2D, Format, FormatProperties, Image, ImageView, KhrPortabilitySubsetFn, KhrGetPhysicalDeviceProperties2Fn, 
+    KhrPortabilityEnumerationFn, PhysicalDevice, PhysicalDeviceProperties, Queue, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR}, Device, Entry, Instance};
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::window::Window;
