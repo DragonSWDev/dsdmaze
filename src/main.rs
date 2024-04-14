@@ -30,7 +30,7 @@ use maze_generator::{MazeGenerator, SelectedGenerator, Direction};
 
 use crate::maze_renderer::gl_renderer::GLRenderer;
 use crate::maze_renderer::vulkan_renderer::VulkanRenderer;
-use crate::maze_renderer::{MazeRenderer, UniformData};
+use crate::maze_renderer::{MazeRenderer, RenderResult, UniformData};
 
                                     //Vertex position   //Texture UV    //Normal vector
 static VERTEX_DATA: [f32; 32] =   [ 0.5,  0.5, 0.0,     1.0, 1.0,       0.0, 0.0, 1.0,
@@ -452,10 +452,12 @@ fn main() {
                     }
                 },
                 WindowEvent::Resized(new_size) => {
-                    program_config.window_width = new_size.width;
-                    program_config.window_height = new_size.height;
+                    if new_size.width != program_config.window_width || new_size.height != program_config.window_height {                    
+                        program_config.window_width = new_size.width;
+                        program_config.window_height = new_size.height;
 
-                    maze_renderer.renderer.resize_viewport(new_size.width, new_size.height);
+                        maze_renderer.renderer.resize_viewport(new_size.width, new_size.height);
+                    }
                 },
                 WindowEvent::CursorMoved { position, .. } => {
                     if cursor_manual_lock {
@@ -487,7 +489,7 @@ fn main() {
                     },
                     _ => ()
                 }
-            }
+            },
             Event::AboutToWait => {
                 let camera_center = camera_position + camera_front;
                 let view = glm::look_at(&camera_position, &camera_center, &camera_up);
@@ -730,7 +732,17 @@ fn main() {
                 }
 
                 //Finish rendering
-                maze_renderer.renderer.render();
+                let render_result = maze_renderer.renderer.render();
+
+                match render_result {
+                    RenderResult::VkOutOfDate => { //Handle VK_OUT_OF_DATE_KHR error
+                        maze_renderer.renderer.resize_viewport(window.inner_size().width, window.inner_size().height);
+                    
+                        program_config.window_width = window.inner_size().width;
+                        program_config.window_height = window.inner_size().height;
+                    },
+                    _ => ()
+                }
 
                 window.request_redraw();
             },

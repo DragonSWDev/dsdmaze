@@ -8,6 +8,11 @@ pub enum RenderingAPI {
     VULKAN
 }
 
+pub enum RenderResult {
+    RenderFinished,
+    VkOutOfDate
+}
+
 impl fmt::Display for RenderingAPI {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -39,7 +44,7 @@ pub trait Renderer {
 
     fn clear_color(&mut self, color: [f32; 4]);
 
-    fn render(&mut self);
+    fn render(&mut self) -> RenderResult;
 
     fn resize_viewport(&mut self, window_width: u32, window_height: u32);
 

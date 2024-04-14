@@ -15,7 +15,7 @@ use crate::maze_renderer::vulkan_renderer::{vulkan_buffer::VulkanBuffer, vulkan_
 
 use self::{vulkan_context::VulkanContext, vulkan_descriptor::VulkanDescriptor, vulkan_image::VulkanImage, vulkan_mesh::{PushConstant, VulkanMesh}, vulkan_pipeline::VulkanPipeline, vulkan_vertex_input::VertexInput};
 
-use super::{Renderer, UniformData};
+use super::{RenderResult, Renderer, UniformData};
 
 pub mod vulkan_context;
 pub mod vulkan_pipeline;
@@ -114,8 +114,8 @@ impl Renderer for VulkanRenderer {
         self.clear_color(color);
     }
 
-    fn render(&mut self) {
-        self.render();
+    fn render(&mut self) -> RenderResult {
+        self.render()
     }
 
     fn resize_viewport(&mut self, window_width: u32, window_height: u32) {
@@ -293,7 +293,7 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self) -> RenderResult {
         unsafe {
             let logical_device = &self.vulkan_context.logical_device;
             let swapchain_loader = &self.vulkan_context.swapchain_loader;
@@ -305,7 +305,11 @@ impl VulkanRenderer {
             logical_device.wait_for_fences(&[in_flight_fence], true, u64::MAX).unwrap();
             logical_device.reset_fences(&[in_flight_fence]).unwrap();
 
-            let (image_index, _) = swapchain_loader.acquire_next_image(self.vulkan_context.swapchain_khr, u64::MAX, image_available_semaphore, Fence::null()).unwrap();
+            let image_index = match swapchain_loader.acquire_next_image(self.vulkan_context.swapchain_khr, u64::MAX, image_available_semaphore, Fence::null()) {
+                Ok((image_index, _)) => image_index,
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return RenderResult::VkOutOfDate,
+                Err(error) => panic!("Acquiring next image failed with error: {}", error)
+            };
 
             logical_device.reset_command_buffer(command_buffer, CommandBufferResetFlags::empty()).unwrap();
 
@@ -429,13 +433,19 @@ impl VulkanRenderer {
                 .wait_semaphores(wait_semaphores)
                 .swapchains(swapchains)
                 .image_indices(image_indices);
-
-            self.vulkan_context.swapchain_loader.queue_present(self.vulkan_context.present_queue, &present_info).unwrap();
+            
+            match self.vulkan_context.swapchain_loader.queue_present(self.vulkan_context.present_queue, &present_info) {
+                Ok(..) => (),
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return RenderResult::VkOutOfDate,
+                Err(error) => panic!("Queue present failed with error: {}", error)
+            }
 
             self.current_frame = (self.current_frame + 1) & MAX_FRAMES_IN_FLIGHT;
 
             self.meshes_to_draw.clear();
         }
+
+        RenderResult::RenderFinished
     }
 
     pub fn clear_color(&mut self, color: [f32; 4]) {
@@ -588,7 +598,7 @@ impl VulkanRenderer {
         descriptor.free(&self.vulkan_context.logical_device, &mut self.vulkan_context.allocator);
     }
 
-    pub fn resize_viewport(&mut self, window_width: u32, window_height: u32) {
+    pub fn resize_viewport(&mut self, window_width: u32, window_height: u32) {        
         unsafe {
             self.vulkan_context.logical_device.device_wait_idle().unwrap();
         }

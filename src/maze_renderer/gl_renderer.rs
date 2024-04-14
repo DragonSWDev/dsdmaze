@@ -9,7 +9,7 @@ use winit::{event_loop::EventLoopWindowTarget, window::{Window, WindowBuilder}};
 
 use self::gl_shader::GlShader;
 
-use super::{Renderer, UniformData};
+use super::{RenderResult, Renderer, UniformData};
 
 mod gl_shader;
 
@@ -106,8 +106,10 @@ impl Renderer for GLRenderer {
         }
     }
 
-    fn render(&mut self) {
+    fn render(&mut self) -> RenderResult {
         self.gl_surface.swap_buffers(&self.gl_context).unwrap();
+
+        RenderResult::RenderFinished
     }
 
     fn resize_viewport(&mut self, window_width: u32, window_height: u32) {
