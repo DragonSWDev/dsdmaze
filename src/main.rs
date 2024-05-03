@@ -52,7 +52,8 @@ struct ProgramConfig {
     audio_enabled: bool,
     seed: String,
     selected_generator: SelectedGenerator,
-    rendering_api: RenderingAPI
+    rendering_api: RenderingAPI,
+    vsync_enabled: bool
 }
 
 //Check collision between point and rectangle
@@ -182,6 +183,11 @@ fn parse_commandline_arguments(arguments: Vec<String>, config: &mut ProgramConfi
                 _ => config.rendering_api = RenderingAPI::VULKAN
             }
         }
+
+        //Disable vertical sync
+        if argument.contains("-disable-vsync") {
+            config.vsync_enabled = false;
+        }
     }
 }
 
@@ -199,7 +205,8 @@ fn main() {
         audio_enabled: true,
         seed: String::new(),
         selected_generator: SelectedGenerator::RD,
-        rendering_api: RenderingAPI::VULKAN
+        rendering_api: RenderingAPI::VULKAN,
+        vsync_enabled: true
     };
 
     if args.iter().any(|e| e.contains("-portable")) {
@@ -237,7 +244,8 @@ fn main() {
                 .set("Collisions", "1")
                 .set("Mouse", "1")
                 .set("Audio", "1")
-                .set("RenderingAPI", "Vulkan");
+                .set("RenderingAPI", "Vulkan")
+                .set("VSync", "1");
 
             conf.write_to_file(config_path).unwrap();
         } else { //Config file exists, try loading 
@@ -272,6 +280,10 @@ fn main() {
             match section.get("RenderingAPI").unwrap() {
                 "Vulkan" => program_config.rendering_api = RenderingAPI::VULKAN,
                 _ => program_config.rendering_api = RenderingAPI::OPENGL
+            }
+
+            if section.get("VSync").unwrap() == "0" {
+                program_config.vsync_enabled = false;
             }
         }
     } 
@@ -308,12 +320,12 @@ fn main() {
     let mut maze_renderer = match program_config.rendering_api {
         RenderingAPI::VULKAN => {
             window = window_builder.build(&event_loop).unwrap();
-            let vulkan_renderer = VulkanRenderer::new(&window);
+            let vulkan_renderer = VulkanRenderer::new(&window, program_config.vsync_enabled);
 
             MazeRenderer::new(Box::new(vulkan_renderer))
         },
         _ => {
-            let opengl_renderer = GLRenderer::new(window_builder, &event_loop);
+            let opengl_renderer = GLRenderer::new(window_builder, &event_loop, program_config.vsync_enabled);
             window = opengl_renderer.1;
 
             MazeRenderer::new(Box::new(opengl_renderer.0))
@@ -339,6 +351,7 @@ fn main() {
     println!("Mouse control: {}", program_config.mouse_enabled);
     println!("Selected generator: {}", program_config.selected_generator);
     println!("Rendering API: {}", program_config.rendering_api);
+    println!("V-Sync: {}", program_config.vsync_enabled);
 
     //Generate random seed if it wasn't provided
     if program_config.seed.is_empty() {

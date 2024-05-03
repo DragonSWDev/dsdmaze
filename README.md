@@ -33,6 +33,8 @@ Configurations is specified by command line arguments or by ini configuration fi
 
 **-rendering-api=value** - Select rendering API: "OpenGL" for OpenGL 3.2 and "Vulkan" for Vulkan 1.0. Default is Vulkan.
 
+**-disable-vsync** - Disable V-Sync
+
 Configuration file is located in following directories:
 
 #### Linux

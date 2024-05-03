@@ -197,9 +197,9 @@ pub struct VulkanRenderer {
 }
 
 impl VulkanRenderer {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, vsync_enabled: bool) -> Self {
         let _vulkan_entry = Entry::linked();
-        let mut vulkan_context = VulkanContext::new(window, &_vulkan_entry);
+        let mut vulkan_context = VulkanContext::new(window, &_vulkan_entry, vsync_enabled);
 
         let supported_sample_count = vulkan_context.get_physical_device_properties().limits.framebuffer_color_sample_counts;
 

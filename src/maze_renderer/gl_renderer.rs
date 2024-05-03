@@ -136,13 +136,13 @@ impl Renderer for GLRenderer {
 }
 
 impl GLRenderer {
-    pub fn new<T>(window_builder: WindowBuilder, window_target: &EventLoopWindowTarget<T>) -> (Self, Window) {
+    pub fn new<T>(window_builder: WindowBuilder, window_target: &EventLoopWindowTarget<T>, vsync_enabled: bool) -> (Self, Window) {
         let display_builder = DisplayBuilder::new().with_window_builder(Some(window_builder));
 
         let (window, gl_config) = display_builder.build(window_target, ConfigTemplateBuilder::new(), |configs| {
             configs
                 .reduce(|accum, config| {
-                    if config.num_samples() > accum.num_samples() {
+                    if config.num_samples() == 4 {
                         config
                     } else {
                         accum
@@ -168,6 +168,11 @@ impl GLRenderer {
         let gl_context = unsafe {
             gl_display.create_context(&gl_config, &context_attributes).expect("Failed to create OpenGL context.").make_current(&gl_surface).unwrap()
         };
+
+        match vsync_enabled {
+            false => gl_surface.set_swap_interval(&gl_context, glutin::surface::SwapInterval::DontWait).unwrap(),
+            true => gl_surface.set_swap_interval(&gl_context, glutin::surface::SwapInterval::Wait(NonZeroU32::new(1).unwrap())).unwrap()
+        }
 
         gl::load_with(|symbol| {
             let symbol = CString::new(symbol).unwrap();

@@ -11,6 +11,7 @@ use winit::window::Window;
 
 pub struct VulkanContext {
     pub instance: Instance,
+    vsync_enabled: bool,
     surface_loader: Surface,
     surface_khr: SurfaceKHR,
     pub physical_device: PhysicalDevice,
@@ -27,7 +28,7 @@ pub struct VulkanContext {
 }
 
 impl VulkanContext {
-    pub fn new(window: &Window, entry: &Entry) -> Self {
+    pub fn new(window: &Window, entry: &Entry, vsync_enabled: bool) -> Self {
         let instance = Self::create_instance(window, entry);
         let surface_loader = Surface::new(entry, &instance);
 
@@ -44,7 +45,7 @@ impl VulkanContext {
         };
 
         let (surface_format, surface_resolution, swapchain_loader, swapchain_khr) = Self::create_swapchain(&instance, &logical_device, physical_device, 
-            &surface_loader, surface_khr, window.inner_size().width, window.inner_size().height);
+            &surface_loader, surface_khr, window.inner_size().width, window.inner_size().height, vsync_enabled);
 
         let (_swapchain_images, swapchain_image_views) = Self::get_swapchain_image_imageviews(&swapchain_loader, swapchain_khr, &logical_device, surface_format);
 
@@ -61,6 +62,7 @@ impl VulkanContext {
         
         Self {
             instance,
+            vsync_enabled,
             surface_loader,
             surface_khr,
             physical_device,
@@ -93,7 +95,7 @@ impl VulkanContext {
         self.destroy_swapchain();
 
         let (surface_format, surface_resolution, swapchain_loader, swapchain_khr) = Self::create_swapchain(&self.instance, &self.logical_device, self.physical_device, 
-            &self.surface_loader, self.surface_khr, window_width, window_height);
+            &self.surface_loader, self.surface_khr, window_width, window_height, self.vsync_enabled);
 
         let (_swapchain_images, swapchain_image_views) = Self::get_swapchain_image_imageviews(&swapchain_loader, swapchain_khr, &self.logical_device, surface_format);
         
@@ -215,7 +217,7 @@ impl VulkanContext {
     }
 
     fn create_swapchain(instance: &Instance, logical_device: &Device, physical_device: PhysicalDevice, surface_loader: &Surface, 
-        surface_khr: SurfaceKHR, window_width: u32, window_height: u32) -> (SurfaceFormatKHR, Extent2D, Swapchain, SwapchainKHR) {
+        surface_khr: SurfaceKHR, window_width: u32, window_height: u32, vsync_enabled: bool) -> (SurfaceFormatKHR, Extent2D, Swapchain, SwapchainKHR) {
 
         let surface_format =  unsafe {
             let supported_surface_formats = surface_loader.get_physical_device_surface_formats(physical_device, surface_khr).unwrap();
@@ -254,6 +256,20 @@ impl VulkanContext {
             surface_capabilities.current_transform
         };
 
+        let present_modes = unsafe {
+            surface_loader.get_physical_device_surface_present_modes(physical_device, surface_khr).unwrap()
+        };
+
+        let mut present_mode = present_modes
+            .iter()
+            .cloned()
+            .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
+            .unwrap_or(vk::PresentModeKHR::FIFO);
+
+        if vsync_enabled {
+            present_mode = vk::PresentModeKHR::FIFO;
+        }
+
         let swapchain_loader = Swapchain::new(&instance, &logical_device);
 
         let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
@@ -266,7 +282,7 @@ impl VulkanContext {
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(vk::PresentModeKHR::FIFO)
+            .present_mode(present_mode)
             .clipped(true)
             .image_array_layers(1);
 
