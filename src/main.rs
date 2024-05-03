@@ -33,10 +33,10 @@ use crate::maze_renderer::vulkan_renderer::VulkanRenderer;
 use crate::maze_renderer::{MazeRenderer, RenderResult, UniformData};
 
                                     //Vertex position   //Texture UV    //Normal vector
-static VERTEX_DATA: [f32; 32] =   [ 0.5,  0.5, 0.0,     1.0, 1.0,       0.0, 0.0, 1.0,
-                                    0.5, -0.5, 0.0,     1.0, 0.0,       0.0, 0.0, 1.0,
-                                    -0.5, -0.5, 0.0,    0.0, 0.0,       0.0, 0.0, 1.0,
-                                    -0.5,  0.5, 0.0,    0.0, 1.0,       0.0, 0.0, 1.0];
+static VERTEX_DATA: [f32; 32] =   [ 0.5,  0.5, 0.0,     1.0, 1.0,       0.0, 0.0, -1.0,
+                                    0.5, -0.5, 0.0,     1.0, 0.0,       0.0, 0.0, -1.0,
+                                    -0.5, -0.5, 0.0,    0.0, 0.0,       0.0, 0.0, -1.0,
+                                    -0.5,  0.5, 0.0,    0.0, 1.0,       0.0, 0.0, -1.0];
 
 static VERTEX_INDICES: [u32; 6] = [0, 1, 3, //First triangle
                                    1, 2, 3]; //Second triangle

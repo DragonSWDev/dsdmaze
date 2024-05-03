@@ -27,7 +27,7 @@ layout (location = 5) out flat int textureIndex;
 void main()
 {
     textureCoords = aTexturePosition;
-    normalVector = aNormalAttribute;
+    normalVector = mat3(transpose(inverse(ubo.view_matrix * pcs.model_matrix))) * aNormalAttribute;
 
     //Change to view space before sending to fragment shader
     fragmentPosition = vec3(ubo.view_matrix * pcs.model_matrix * vec4(aVertexPosition, 1.0));

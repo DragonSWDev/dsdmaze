@@ -33,7 +33,7 @@ void main()
 
     //Point light attentuation (from Ogre3D)
     float distance = length(lightPosition - fragmentPosition);
-    float attenuation = 1.0 / (1.0 + 0.35 * distance + 0.44 * (distance * distance));
+    float attenuation = 1.0 / (1.0 + 0.8 * distance + 2.4 * (distance * distance));
 
     ambient *= attenuation;
     diffuse *= attenuation;

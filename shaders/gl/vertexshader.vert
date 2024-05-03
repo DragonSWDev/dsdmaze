@@ -18,7 +18,7 @@ out vec3 lightPosition;
 void main()
 {
     textureCoords = aTexturePosition;
-    normalVector = aNormalAttribute;
+    normalVector = mat3(transpose(inverse(view * model))) * aNormalAttribute;
 
     //Change to view space before sending to fragment shader
     fragmentPosition = vec3(view * model * vec4(aVertexPosition, 1.0));

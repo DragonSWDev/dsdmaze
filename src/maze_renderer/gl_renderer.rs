@@ -161,7 +161,7 @@ impl GLRenderer {
         };
 
         let context_attributes = ContextAttributesBuilder::new()
-            .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 2))))
+            .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 3))))
             .with_profile(GlProfile::Core)
             .build(raw_window_handle);
 
@@ -182,6 +182,7 @@ impl GLRenderer {
         unsafe {
             gl::Enable(gl::DEPTH_TEST);
             gl::Enable(gl::CULL_FACE);
+            gl::Enable(gl::FRAMEBUFFER_SRGB);
         }
 
         println!("OpenGL initialized.");
@@ -224,7 +225,7 @@ impl GLRenderer {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
     
-            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, texture.width() as i32, texture.height() as i32, 
+            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::SRGB_ALPHA as i32, texture.width() as i32, texture.height() as i32, 
                             0, gl::RGBA, gl::UNSIGNED_BYTE, texture.into_raw().as_ptr() as *const c_void);
     
             gl::GenerateMipmap(gl::TEXTURE_2D);
