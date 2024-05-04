@@ -31,7 +31,7 @@ Configurations is specified by command line arguments or by ini configuration fi
 
 **-disable-audio** - Disable audio
 
-**-rendering-api=value** - Select rendering API: "OpenGL" for OpenGL 3.2 and "Vulkan" for Vulkan 1.0. Default is Vulkan.
+**-rendering-api=value** - Select rendering API: "OpenGL" for OpenGL 3.3 and "Vulkan" for Vulkan 1.0. Default is Vulkan.
 
 **-disable-vsync** - Disable V-Sync
 
