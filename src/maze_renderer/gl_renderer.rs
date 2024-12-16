@@ -1,4 +1,4 @@
-use std::{ffi::{CStr, CString}, mem, num::NonZeroU32, os::raw::c_void, ptr};
+use std::{ffi::{CStr, CString}, mem, num::NonZeroU32, os::raw::c_void, os::raw::c_char, ptr};
 
 use gl::types::{GLsizeiptr, GLuint};
 use glutin::{config::{ConfigTemplateBuilder, GlConfig}, context::{ContextApi, ContextAttributesBuilder, GlProfile, NotCurrentGlContext, PossiblyCurrentContext, Version}, 
@@ -188,13 +188,13 @@ impl GLRenderer {
         println!("OpenGL initialized.");
 
         unsafe {
-            let vendor = gl::GetString(gl::VENDOR) as *const i8;
+            let vendor = gl::GetString(gl::VENDOR) as *const c_char;
             let vendor = String::from_utf8(CStr::from_ptr(vendor).to_bytes().to_vec()).unwrap();
 
-            let renderer = gl::GetString(gl::RENDERER) as *const i8;
+            let renderer = gl::GetString(gl::RENDERER) as *const c_char;
             let renderer = String::from_utf8(CStr::from_ptr(renderer).to_bytes().to_vec()).unwrap();
 
-            let version = gl::GetString(gl::VERSION) as *const i8;
+            let version = gl::GetString(gl::VERSION) as *const c_char;
         let version = String::from_utf8(CStr::from_ptr(version).to_bytes().to_vec()).unwrap();
 
             println!("Vendor: {}", vendor);
